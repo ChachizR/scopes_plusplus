@@ -1,3 +1,3 @@
 cmake --build build --parallel --config Release
 
-call .\build\Release\scopes_plusplus.exe
+call .\build\src\app\Release\scopes++.exe

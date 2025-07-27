@@ -1,7 +1,4 @@
 build
 .vscode
-
-ext/*
-!ext/CMakeLists.txt
-!ext/imgui/CMakeLists.txt
-!ext/glfw/CMakeLists.txt
+ext/imgui/imgui
+ext/glfw/glfw
