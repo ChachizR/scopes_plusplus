@@ -1,7 +1,3 @@
-# project(ExternalLibrary)
-
-# cmake_minimum_required(VERSION 3.29)  # match your root policy
-
 include(FetchContent) # FetchContent module is used to download and manage external dependencies
 
 # Add DearImGui docking branch

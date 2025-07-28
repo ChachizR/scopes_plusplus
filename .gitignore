@@ -1,4 +1,9 @@
 build
+out
+.vs
 .vscode
 ext/imgui/imgui
 ext/glfw/glfw
+
+debugging/
+start_debugging.bat

@@ -1,5 +1,6 @@
 project(ScopesPlusPlusMain)
 
+# ## Main Executable
 file(GLOB_RECURSE APP_HEADERS CONFIGURE_DEPENDS "./src/*.hpp")
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS "./src/*.cpp")
 
@@ -7,16 +8,44 @@ add_executable(${PROJECT_NAME} ./src/main.cpp ${APP_SOURCES})
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     OUTPUT_NAME "scopes++"
+    VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
 )
 
-target_include_directories(${PROJECT_NAME} PRIVATE ./src)
+target_include_directories(${PROJECT_NAME}
+    PRIVATE
+    ./src
+)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC imgui)
+# ## IMGUI
+target_link_libraries(${PROJECT_NAME} PRIVATE imgui)
 
+# ## OpenGL
 find_package(OpenGL REQUIRED)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC OpenGL::GL)
+target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::GL)
 
+# ## OpenCL
+find_package(OpenCL REQUIRED)
+
+target_include_directories(${PROJECT_NAME}
+    PRIVATE
+    $<TARGET_PROPERTY:opencl_headers,INTERFACE_INCLUDE_DIRECTORIES>
+    ${OpenCL_INCLUDE_DIRS}
+)
+
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+    ${OpenCL_LIBRARIES}
+)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
+    COMMENT "Copying assets to build directory"
+)
+
+# ## Compiler Options
 if(MSVC)
     # add precompiled headers for MSVC (pch.hpp & pch.cpp)
     target_compile_options(
