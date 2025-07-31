@@ -2,7 +2,12 @@
 
 #include "pch.hpp"
 
-#include "../ui/ui.hpp"
+#include "ui.hpp"
+#include "util.hpp"
+#include "bitmap.hpp"
+#include "video_source.hpp"
+#include "cl_renderer.hpp"
+#include "ndi_source_provider.hpp"
 
 namespace scpp {
 
@@ -17,6 +22,8 @@ private:
     ImVec4 m_clearColor{0.05f, 0.05f, 0.05f, 1.00f};
 
     ImFont* m_fontRoboto{nullptr};
+
+    NDISourceProvider m_ndiSourceProvider{};
 
 public:
     Application();
@@ -44,6 +51,13 @@ private:
     static inline void GLFWErrorCallback(int error, const char* description) {
         std::println("GLFW Error {}: {}", error, description);
     }
+
+    // UI
+
+    void UI_Main() const noexcept;
+    void UI_MainMenuBar() const noexcept;
+    void UI_Settings() const noexcept;
+    void UI_NDISources() const noexcept;
 };
 
 } // namespace scpp

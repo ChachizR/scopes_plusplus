@@ -5,5 +5,9 @@ out
 ext/imgui/imgui
 ext/glfw/glfw
 
+ext/ndi/**
+!ext/ndi/CMakeLists.txt
+
 debugging/
 start_debugging.bat
+

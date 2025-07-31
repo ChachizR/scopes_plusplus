@@ -21,6 +21,19 @@ Application::~Application() {
 
 void Application::Run() {
 
+    auto result = LoadBitmapFromBinary(
+        R"(D:\DEV\.Projects\20230125 livescopestv\mindstudio_livescopestv_pro\test\testdata\bars_uhd.jpg.rgba.bin)",
+        3840, 2160, BitmapFormat::RGBA8);
+
+    if (!result) {
+        std::println("Failed to load bitmap: {}", static_cast<int>(result.error()));
+        return;
+    }
+
+    GPUBitmap bitmap(std::move(result.value()));
+
+    scpp::OpenCLRenderer clRenderer;
+
     while (!glfwWindowShouldClose(m_window)) {
         glfwPollEvents();
         if (glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) != 0) {
@@ -36,6 +49,17 @@ void Application::Run() {
             ImGui::ShowDemoWindow();
 
         Render();
+
+        ImGui::Begin("ImagePreview", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysUseWindowPadding);
+
+        bitmap.ImGuiImageRender();
+        ImGui::End();
+
+        clRenderer.ExecuteKernel();
+        ImGui::Begin("OpenCL Renderer", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysUseWindowPadding);
+        ImGui::Text("OpenCL Renderer");
+        clRenderer.ImGuiImageRender();
+        ImGui::End();
 
         ImGui::Render();
         int display_w, display_h;
@@ -93,10 +117,10 @@ bool Application::InitImGui() {
     if (!LoadFonts())
         return false;
 
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;   // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;    // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;       // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;     // Enable Multi-Viewport / Platform Windows
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport / Platform Windows
     // io.ConfigViewportsNoAutoMerge = true;
     // io.ConfigViewportsNoTaskBarIcon = true;
 
@@ -121,6 +145,7 @@ bool Application::InitImGui() {
 
     return true;
 }
+
 bool Application::LoadFonts() {
     ImGuiIO& io = ImGui::GetIO();
 
@@ -131,17 +156,65 @@ bool Application::LoadFonts() {
 
     return true;
 }
+
 void Application::ShutdownImGui() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
+
 void Application::ShutdownGLFW() {
     glfwDestroyWindow(m_window);
     glfwTerminate();
 }
 
 void Application::Render() {
-    ui::MainUI();
+    UI_Main();
+}
+void Application::UI_Main() const noexcept {
+    UI_MainMenuBar();
+
+    ImGui::DockSpaceOverViewport(
+        0, ImGui::GetMainViewport(),
+        ImGuiDockNodeFlags_PassthruCentralNode);
+
+    UI_Settings();
+    UI_NDISources();
+}
+void Application::UI_MainMenuBar() const noexcept {
+    ImGui::BeginMainMenuBar();
+
+    // File menu
+    if (ImGui::BeginMenu("File")) {
+        if (ImGui::MenuItem("Exit")) {
+            glfwSetWindowShouldClose(glfwGetCurrentContext(), true);
+        }
+        ImGui::EndMenu();
+    }
+
+    ImGui::EndMainMenuBar();
+}
+void Application::UI_Settings() const noexcept {
+    ImGui::Begin("Settings");
+
+    ImGui::End();
+}
+void Application::UI_NDISources() const noexcept {
+    const auto sources = m_ndiSourceProvider.GetSources();
+
+    ImGui::Begin("NDI Sources");
+    if (ImGui::BeginTable("NDI Sources Table", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("Source Name");
+        ImGui::TableSetupColumn("Source Type");
+        for (const auto& source : sources) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(source.p_ndi_name);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextUnformatted(source.p_url_address);
+        }
+        ImGui::EndTable();
+    }
+    ImGui::End();
 }
 } // namespace scpp

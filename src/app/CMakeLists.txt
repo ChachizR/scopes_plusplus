@@ -5,6 +5,7 @@ file(GLOB_RECURSE APP_HEADERS CONFIGURE_DEPENDS "./src/*.hpp")
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS "./src/*.cpp")
 
 add_executable(${PROJECT_NAME} ./src/main.cpp ${APP_SOURCES})
+target_sources(${PROJECT_NAME} PRIVATE ${APP_HEADERS})
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     OUTPUT_NAME "scopes++"
@@ -14,6 +15,18 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 target_include_directories(${PROJECT_NAME}
     PRIVATE
     ./src
+)
+
+source_group(
+    TREE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    PREFIX "Source Files"
+    FILES ${APP_SOURCES}
+)
+
+source_group(
+    TREE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    PREFIX "Header Files"
+    FILES ${APP_HEADERS}
 )
 
 # ## IMGUI
@@ -38,6 +51,27 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCL_LIBRARIES}
 )
 
+# ## NDI
+set(NDI_SDK_DIR "${CMAKE_SOURCE_DIR}/ext/ndi")
+
+target_include_directories(${PROJECT_NAME}
+    PRIVATE
+    ${NDI_SDK_DIR}/include
+)
+
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+    ${NDI_SDK_DIR}/Processing.NDI.Lib.Advanced.x64.lib
+)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${NDI_SDK_DIR}/Processing.NDI.Lib.Advanced.x64.dll
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>
+    COMMENT "Copying NDI library to build directory"
+)
+
+# ## Assets
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_CURRENT_SOURCE_DIR}/assets
