@@ -3,9 +3,11 @@ project(ScopesPlusPlusMain)
 # ## Main Executable
 file(GLOB_RECURSE APP_HEADERS CONFIGURE_DEPENDS "./src/*.hpp")
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS "./src/*.cpp")
+file(GLOB_RECURSE APP_CL_SOURCES CONFIGURE_DEPENDS "./kernels/*.cl")
 
 add_executable(${PROJECT_NAME} ./src/main.cpp ${APP_SOURCES})
 target_sources(${PROJECT_NAME} PRIVATE ${APP_HEADERS})
+target_sources(${PROJECT_NAME} PRIVATE ${APP_CL_SOURCES})
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     OUTPUT_NAME "scopes++"
@@ -27,6 +29,12 @@ source_group(
     TREE ${CMAKE_CURRENT_SOURCE_DIR}/src
     PREFIX "Header Files"
     FILES ${APP_HEADERS}
+)
+
+source_group(
+    TREE ${CMAKE_CURRENT_SOURCE_DIR}/kernels
+    PREFIX "OpenCL Files"
+    FILES ${APP_CL_SOURCES}
 )
 
 # ## IMGUI
@@ -77,6 +85,14 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     ${CMAKE_CURRENT_SOURCE_DIR}/assets
     $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
     COMMENT "Copying assets to build directory"
+)
+
+# ## Kernels
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernels
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/kernels
+    COMMENT "Copying OpenCL kernels to build directory"
 )
 
 # ## Compiler Options

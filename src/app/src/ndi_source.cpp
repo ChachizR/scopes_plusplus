@@ -3,7 +3,7 @@
 
 namespace scpp {
 
-ErrorCode NDISource::Start() {
+auto NDISource::Start() -> ErrorCode {
     if (m_isRunning) {
         return ErrorCode::SourceAlreadyRunning;
     }
@@ -16,7 +16,7 @@ ErrorCode NDISource::Start() {
     return ErrorCode::None;
 }
 
-std::string_view NDISource::GetName() const noexcept {
+auto NDISource::GetName() const noexcept -> std::string_view {
     return std::string_view{m_source.p_ndi_name ? m_source.p_ndi_name : m_source.p_url_address};
 }
 
@@ -39,7 +39,8 @@ void NDISource::ReceiveLoop() {
 
     while (!m_shouldStop) {
         switch (
-            NDIlib_recv_capture_v3(recvInstance, &videoFrameHeader, nullptr, nullptr, 100)) {
+            NDIlib_recv_capture_v3(
+                recvInstance, &videoFrameHeader, nullptr, nullptr, 100)) {
         case NDIlib_frame_type_none:
         case NDIlib_frame_type_audio:
         case NDIlib_frame_type_metadata:
@@ -65,7 +66,15 @@ void NDISource::ReceiveLoop() {
     NDIlib_recv_destroy(recvInstance);
 }
 
-ErrorCode NDISource::HandleVideoFrame([[maybe_unused]] const NDIlib_video_frame_v2_t& videoFrame) noexcept {
+auto NDISource::HandleVideoFrame([[maybe_unused]] const NDIlib_video_frame_v2_t& videoFrame) noexcept -> ErrorCode {
+
+    const auto sourceFormat = SourceFormatFromNDIFourCC(videoFrame.FourCC);
+
+    m_renderer.ExecutePipeline(
+        videoFrame.p_data,
+        Dims2D{(uint32_t)videoFrame.xres, (uint32_t)videoFrame.yres},
+        sourceFormat);
+
     return ErrorCode::None;
 }
 

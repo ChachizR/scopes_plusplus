@@ -2,8 +2,10 @@
 
 namespace scpp {
 NDISourceProvider::NDISourceProvider(
+    const OpenCLDeviceProvider&         deviceProviderRef,
     std::chrono::steady_clock::duration enumerationInterval)
-    : m_enumerationInterval{enumerationInterval} {
+    : m_deviceProviderRef{deviceProviderRef}
+    , m_enumerationInterval{enumerationInterval} {
 
     const NDIlib_find_create_t findSettings{true, nullptr, nullptr};
 
@@ -42,21 +44,6 @@ void NDISourceProvider::EnumerationLoop() {
 
         std::this_thread::sleep_for(m_enumerationInterval);
     }
-}
-
-std::expected<NDISource, ErrorCode> NDISourceProvider::SelectSource(
-    uint32_t index) const noexcept {
-    if (index >= m_sources.size()) {
-        return std::unexpected(ErrorCode::SourceNotFound);
-    }
-
-    const auto& source = m_sources[index];
-
-    return NDISource(source);
-}
-
-std::expected<NDISource, ErrorCode> NDISourceProvider::SelectSource(const NDIlib_source_t& source) const noexcept {
-    return NDISource(source);
 }
 
 } // namespace scpp

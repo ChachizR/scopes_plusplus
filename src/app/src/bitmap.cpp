@@ -40,7 +40,7 @@ void GPUBitmap::ImGuiImageRender() const {
     float scale  = (std::min)((std::min)(scaleX, scaleY), 1.0f);
 
     ImGui::Image(
-        (void*)(intptr_t)m_textureID,
+        static_cast<ImTextureID>(m_textureID),
         ImVec2(imgW * scale, imgH * scale));
 }
 } // namespace scpp

@@ -9,10 +9,14 @@ namespace scpp {
 class NDISourceProvider {
 public:
     NDISourceProvider(
+        const OpenCLDeviceProvider&         deviceProviderRef,
         std::chrono::steady_clock::duration enumerationInterval = 1s);
+       
 
     ~NDISourceProvider();
 private:
+    const OpenCLDeviceProvider&         m_deviceProviderRef;
+
     std::chrono::steady_clock::duration m_enumerationInterval;
 
     NDIlib_find_instance_t m_findInstance = nullptr;
@@ -27,14 +31,13 @@ private:
 
 public:
     [[nodiscard]]
-    const std::span<const NDIlib_source_t> GetSources() const noexcept {
+    auto GetSources() const noexcept -> const std::span<const NDIlib_source_t> {
         return m_sources;
     }
 
     [[nodiscard]]
-    std::expected<NDISource,ErrorCode> SelectSource(uint32_t index) const noexcept;
-
-    [[nodiscard]]
-    std::expected<NDISource, ErrorCode> SelectSource(const NDIlib_source_t& source) const noexcept;
+    auto SelectSource(const NDIlib_source_t& source) const noexcept -> NDISource {
+        return NDISource(m_deviceProviderRef, source);
+    }
 };
 } // namespace scpp

@@ -12,72 +12,20 @@ Application::Application() {
         glfwTerminate();
         throw std::runtime_error("ImGui initialization failed");
     }
+
+    m_openclDeviceProvider = std::make_unique<OpenCLDeviceProvider>();
+
+    if (!m_openclDeviceProvider->IsInitialized()) {
+        std::println("Failed to initialize OpenCL device provider");
+        throw std::runtime_error("OpenCL device provider initialization failed");
+    }
+
+    m_ndiSourceProvider = std::make_unique<NDISourceProvider>(*m_openclDeviceProvider);
 }
 
 Application::~Application() {
     ShutdownImGui();
     ShutdownGLFW();
-}
-
-void Application::Run() {
-
-    auto result = LoadBitmapFromBinary(
-        R"(D:\DEV\.Projects\20230125 livescopestv\mindstudio_livescopestv_pro\test\testdata\bars_uhd.jpg.rgba.bin)",
-        3840, 2160, BitmapFormat::RGBA8);
-
-    if (!result) {
-        std::println("Failed to load bitmap: {}", static_cast<int>(result.error()));
-        return;
-    }
-
-    GPUBitmap bitmap(std::move(result.value()));
-
-    scpp::OpenCLRenderer clRenderer;
-
-    while (!glfwWindowShouldClose(m_window)) {
-        glfwPollEvents();
-        if (glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) != 0) {
-            ImGui_ImplGlfw_Sleep(10);
-            continue;
-        }
-
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        if (false)
-            ImGui::ShowDemoWindow();
-
-        Render();
-
-        ImGui::Begin("ImagePreview", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysUseWindowPadding);
-
-        bitmap.ImGuiImageRender();
-        ImGui::End();
-
-        clRenderer.ExecuteKernel();
-        ImGui::Begin("OpenCL Renderer", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysUseWindowPadding);
-        ImGui::Text("OpenCL Renderer");
-        clRenderer.ImGuiImageRender();
-        ImGui::End();
-
-        ImGui::Render();
-        int display_w, display_h;
-        glfwGetFramebufferSize(m_window, &display_w, &display_h);
-        glViewport(0, 0, display_w, display_h);
-        glClearColor(m_clearColor.x * m_clearColor.w, m_clearColor.y * m_clearColor.w, m_clearColor.z * m_clearColor.w, m_clearColor.w);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-        if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-            GLFWwindow* backup_current_context = glfwGetCurrentContext();
-            ImGui::UpdatePlatformWindows();
-            ImGui::RenderPlatformWindowsDefault();
-            glfwMakeContextCurrent(backup_current_context);
-        }
-
-        glfwSwapBuffers(m_window);
-    }
 }
 
 bool Application::InitGLFW() {
@@ -168,9 +116,10 @@ void Application::ShutdownGLFW() {
     glfwTerminate();
 }
 
-void Application::Render() {
+void Application::RenderApp() {
     UI_Main();
 }
+
 void Application::UI_Main() const noexcept {
     UI_MainMenuBar();
 
@@ -200,7 +149,7 @@ void Application::UI_Settings() const noexcept {
     ImGui::End();
 }
 void Application::UI_NDISources() const noexcept {
-    const auto sources = m_ndiSourceProvider.GetSources();
+    const auto sources = m_ndiSourceProvider->GetSources();
 
     ImGui::Begin("NDI Sources");
     if (ImGui::BeginTable("NDI Sources Table", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
@@ -217,4 +166,76 @@ void Application::UI_NDISources() const noexcept {
     }
     ImGui::End();
 }
+
+void Application::Run() {
+
+    std::unique_ptr<scpp::VideoSource> source = nullptr;
+
+    while (!glfwWindowShouldClose(m_window)) {
+        
+
+        glfwPollEvents();
+        if (glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) != 0) {
+            ImGui_ImplGlfw_Sleep(10);
+            continue;
+        }
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        if (!source) {
+            const auto sources = m_ndiSourceProvider->GetSources();
+
+            if (!sources.empty()) {
+
+                source = std::make_unique<scpp::NDISource>(*m_openclDeviceProvider, sources[0]);
+
+                if (source->Start() != scpp::ErrorCode::None) {
+                    std::println("Failed to start NDI source: {}", source->GetName());
+                    source.reset();
+                }
+            } 
+        }
+
+        if (false)
+            ImGui::ShowDemoWindow();
+
+        RenderApp();
+
+        if (source) {
+            auto& sourceRenderer = source->GetRenderer();
+            if (sourceRenderer.needsResizeFlag_mainThread) {
+                sourceRenderer.ResizeSourceTextures();
+            }
+
+            auto sourceTextures = sourceRenderer.GetTargetTextures();
+
+            ImGui::Begin("ImagePreview", nullptr, ImGuiWindowFlags_NoCollapse);
+
+            ImGuiImageRender(sourceTextures->sourcePreview);
+            ImGui::End();
+        }
+
+        // render stuff
+
+        ImGui::Render();
+        int display_w, display_h;
+        glfwGetFramebufferSize(m_window, &display_w, &display_h);
+        glViewport(0, 0, display_w, display_h);
+        glClearColor(m_clearColor.x * m_clearColor.w, m_clearColor.y * m_clearColor.w, m_clearColor.z * m_clearColor.w, m_clearColor.w);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+            GLFWwindow* backup_current_context = glfwGetCurrentContext();
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+            glfwMakeContextCurrent(backup_current_context);
+        }
+
+        glfwSwapBuffers(m_window);
+    }
+}
+
 } // namespace scpp

@@ -23,7 +23,9 @@ private:
 
     ImFont* m_fontRoboto{nullptr};
 
-    NDISourceProvider m_ndiSourceProvider{};
+    std::unique_ptr<scpp::OpenCLDeviceProvider> m_openclDeviceProvider = nullptr;
+
+    std::unique_ptr<NDISourceProvider> m_ndiSourceProvider = nullptr;
 
 public:
     Application();
@@ -46,7 +48,7 @@ private:
 
     void ShutdownGLFW();
 
-    void Render();
+    void RenderApp();
 
     static inline void GLFWErrorCallback(int error, const char* description) {
         std::println("GLFW Error {}: {}", error, description);

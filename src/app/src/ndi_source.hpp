@@ -10,20 +10,19 @@ private:
     NDIlib_source_t m_source;
 
 public:
-    explicit NDISource(NDIlib_source_t source)
-        : m_source{source} {}
+    explicit NDISource(const OpenCLDeviceProvider& deviceProviderRef, NDIlib_source_t source) noexcept
+        : VideoSource{deviceProviderRef}
+        , m_source{source} {}
+
+    auto Start() -> ErrorCode override;
 
     [[nodiscard]]
-    ErrorCode Start() override;
-
-    [[nodiscard]]
-    virtual std::string_view GetName() const noexcept override;
+    auto GetName() const noexcept -> std::string_view override;
 
 private:
-
     void ReceiveLoop();
 
     [[nodiscard]]
-    ErrorCode HandleVideoFrame(const NDIlib_video_frame_v2_t& videoFrame) noexcept;
+    auto HandleVideoFrame(const NDIlib_video_frame_v2_t& videoFrame) noexcept -> ErrorCode;
 };
 } // namespace scpp

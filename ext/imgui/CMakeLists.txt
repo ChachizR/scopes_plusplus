@@ -29,3 +29,9 @@ target_sources(imgui
 )
 
 target_link_libraries(imgui PUBLIC glfw)
+
+target_compile_definitions(imgui
+  PUBLIC
+  IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+  IMGUI_DISABLE_OBSOLETE_KEYIO
+)

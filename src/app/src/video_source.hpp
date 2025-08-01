@@ -1,36 +1,9 @@
 #pragma once
 
 #include "pch.hpp"
-#include "error_codes.hpp"
+#include "cl_renderer.hpp"
 
 namespace scpp {
-
-enum class SourceFormat {
-    unknown = 0,
-    RGBA_8888,
-    BGRA_8888,
-    ARGB_8888,
-    BGRX_8888,
-    BGR_888_InvY,
-    RGB_888,
-    UYVY_422,
-    YUYV_422,
-    NV12,
-    UYVY10_422,
-};
-
-struct SourceFrame {
-    std::vector<uint8_t> data;
-    size_t               width;
-    size_t               height;
-    SourceFormat         format;
-};
-
-enum class GetFrameResult {
-    Success,
-    NoFrame,
-    Error,
-};
 
 class VideoSource {
 protected:
@@ -38,26 +11,28 @@ protected:
     bool        m_shouldStop = false;
     std::thread m_thread;
 
-    VideoSource() {}
+    OpenCLRenderer m_renderer;
+    VideoSource(const OpenCLDeviceProvider& deviceProviderRef)
+        : m_renderer{deviceProviderRef} {}
 
-    VideoSource(VideoSource&&)                 = default;
-    VideoSource& operator=(VideoSource&&)      = default;
+    VideoSource(VideoSource&&)            = default;
+    VideoSource& operator=(VideoSource&&) = default;
 
 public:
-    ~VideoSource() {
+    virtual ~VideoSource() {
         if (m_isRunning) {
             Stop();
         }
     }
 
     [[nodiscard]]
-    virtual std::string_view GetName() const noexcept = 0;
+    virtual auto GetName() const noexcept -> std::string_view = 0;
 
     [[nodiscard]]
-    constexpr bool IsRunning() const noexcept { return m_isRunning; }
+    constexpr auto IsRunning() const noexcept -> bool { return m_isRunning; }
 
     [[nodiscard]]
-    virtual ErrorCode Start() = 0;
+    virtual auto Start() -> ErrorCode = 0;
 
     void Stop() {
         if (!m_isRunning) {
@@ -68,6 +43,11 @@ public:
             m_thread.join();
         }
         m_isRunning = false;
+    }
+
+    [[nodiscard]]
+    auto GetRenderer() noexcept -> OpenCLRenderer& {
+        return m_renderer;
     }
 };
 
