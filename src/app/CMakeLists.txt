@@ -88,12 +88,15 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 )
 
 # ## Kernels
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+add_custom_target(copy_kernels ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/kernels
-    $<TARGET_FILE_DIR:${PROJECT_NAME}>/kernels
+    "${CMAKE_CURRENT_SOURCE_DIR}/kernels"
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>/kernels"
+    DEPENDS ${CL_KERNELS}
     COMMENT "Copying OpenCL kernels to build directory"
 )
+
+add_dependencies(${PROJECT_NAME} copy_kernels)
 
 # ## Compiler Options
 if(MSVC)

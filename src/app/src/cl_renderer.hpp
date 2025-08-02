@@ -7,6 +7,7 @@ namespace scpp {
 struct RenderPipelineKernels {
     bool       initialized{false};
     cl::Kernel convertSource_RGBA_8888;
+    cl::Kernel convertSource_RGBX_8888;
 };
 
 class OpenCLDeviceProvider {
@@ -26,6 +27,7 @@ private:
 
     static constexpr auto c_KernelSourcePath                   = "./kernels/renderpipeline.cl"sv;
     static constexpr auto c_KernelName_convertSource_RGBA_8888 = "convertSource_RGBA_8888_to_RGBA_YUV"sv;
+    static constexpr auto c_KernelName_convertSource_RGBX_8888 = "convertSource_RGBX_8888_to_RGBA_YUV"sv;
 
     bool m_initialized{false};
 
@@ -94,13 +96,16 @@ struct CLGLTextureRGBA {
     CLGLTextureRGBA(std::string_view description, Dims2D size, const cl::Context& context);
 
     ~CLGLTextureRGBA() {
+        if (glTextureID == 0)
+            return;
         glDeleteTextures(1, &glTextureID);
+        std::println("Deleted OpenGL texture: {}", glTextureID);
     }
 
     CLGLTextureRGBA(const CLGLTextureRGBA&)            = delete;
     CLGLTextureRGBA& operator=(const CLGLTextureRGBA&) = delete;
-    CLGLTextureRGBA(CLGLTextureRGBA&&)                 = default;
-    CLGLTextureRGBA& operator=(CLGLTextureRGBA&&)      = default;
+    CLGLTextureRGBA(CLGLTextureRGBA&& rhs) noexcept;
+    CLGLTextureRGBA& operator=(CLGLTextureRGBA&& rhs) noexcept;
 
     // should be called on the main gl thread
     void Resize(Dims2D newSize, const cl::Context& context);
@@ -110,19 +115,18 @@ static inline void ImGuiImageRender(
     const CLGLTextureRGBA& texture) {
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
-    float imgW = static_cast<float>(texture.size.width);
-    float imgH = static_cast<float>(texture.size.height);
+    float imgW   = static_cast<float>(texture.size.width);
+    float imgH   = static_cast<float>(texture.size.height);
     float scaleX = avail.x / imgW;
     float scaleY = avail.y / imgH;
     float scale  = (std::min)((std::min)(scaleX, scaleY), 1.0f);
 
-    const auto imTextureID = (ImTextureID)(size_t)(texture.glTextureID);
+    const auto imTextureID = static_cast<ImTextureID>(texture.glTextureID);
 
     ImGui::Image(
         imTextureID,
         ImVec2(imgW * scale, imgH * scale),
-        ImVec2(0, 0), ImVec2(1, 1)
-    );
+        ImVec2(0, 0), ImVec2(1, 1));
 }
 
 struct TargetTextures {
@@ -185,6 +189,7 @@ static inline constexpr auto GetSourceSize(SourceFormat format, Dims2D size) noe
     case SourceFormat::unknown:
         return 0;
     case SourceFormat::RGBA_8888:
+    case SourceFormat::RGBX_8888:
     case SourceFormat::BGRA_8888:
     case SourceFormat::ARGB_8888:
     case SourceFormat::BGRX_8888:
@@ -255,11 +260,9 @@ public:
     void ResizeSourceTextures();
 
 private:
-
     void ResizeBuffers();
 
 public:
-
     [[nodiscard]]
     auto GetTargetTextures() const noexcept -> const TargetTextures* const {
         return m_targetTextures.get();

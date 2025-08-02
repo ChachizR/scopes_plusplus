@@ -66,7 +66,7 @@ void NDISource::ReceiveLoop() {
     NDIlib_recv_destroy(recvInstance);
 }
 
-auto NDISource::HandleVideoFrame([[maybe_unused]] const NDIlib_video_frame_v2_t& videoFrame) noexcept -> ErrorCode {
+auto NDISource::HandleVideoFrame(const NDIlib_video_frame_v2_t& videoFrame) noexcept -> ErrorCode {
 
     const auto sourceFormat = SourceFormatFromNDIFourCC(videoFrame.FourCC);
 

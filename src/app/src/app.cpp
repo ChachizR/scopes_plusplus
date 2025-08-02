@@ -172,7 +172,6 @@ void Application::Run() {
     std::unique_ptr<scpp::VideoSource> source = nullptr;
 
     while (!glfwWindowShouldClose(m_window)) {
-        
 
         glfwPollEvents();
         if (glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) != 0) {
@@ -195,7 +194,7 @@ void Application::Run() {
                     std::println("Failed to start NDI source: {}", source->GetName());
                     source.reset();
                 }
-            } 
+            }
         }
 
         if (false)
@@ -207,6 +206,7 @@ void Application::Run() {
             auto& sourceRenderer = source->GetRenderer();
             if (sourceRenderer.needsResizeFlag_mainThread) {
                 sourceRenderer.ResizeSourceTextures();
+                sourceRenderer.needsResizeFlag_mainThread = false;
             }
 
             auto sourceTextures = sourceRenderer.GetTargetTextures();
@@ -214,8 +214,11 @@ void Application::Run() {
             ImGui::Begin("ImagePreview", nullptr, ImGuiWindowFlags_NoCollapse);
 
             ImGuiImageRender(sourceTextures->sourcePreview);
+
             ImGui::End();
         }
+
+        ImGui::ShowMetricsWindow();
 
         // render stuff
 

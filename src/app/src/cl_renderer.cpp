@@ -237,7 +237,15 @@ auto OpenCLDeviceProvider::CreateKernels() const -> std::expected<RenderPipeline
         cl::Kernel(program, c_KernelName_convertSource_RGBA_8888.data(), &res);
 
     if (res != CL_SUCCESS) {
-        std::println("Failed to create OpenCL kernel: {}", res);
+        std::println("Failed to create OpenCL kernel: {} {}", c_KernelName_convertSource_RGBA_8888, res);
+        return std::unexpected(ErrorCode::KernelCreateKernelFailed);
+    }
+
+    kernels.convertSource_RGBX_8888 =
+        cl::Kernel(program, c_KernelName_convertSource_RGBX_8888.data(), &res);
+
+    if (res != CL_SUCCESS) {
+        std::println("Failed to create OpenCL kernel: {} {}", c_KernelName_convertSource_RGBX_8888, res);
         return std::unexpected(ErrorCode::KernelCreateKernelFailed);
     }
 
@@ -271,11 +279,39 @@ CLGLTextureRGBA::CLGLTextureRGBA(Dims2D size, const cl::Context& context)
     if (res != CL_SUCCESS) {
         std::println("Failed to create OpenCL ImageGL: {}", res);
     }
+
+    std::println("Created OpenCL texture {}: {} with size {}x{}", glTextureID, description, size.width, size.height);
 }
 
 CLGLTextureRGBA::CLGLTextureRGBA(std::string_view description, Dims2D size, const cl::Context& context)
     : CLGLTextureRGBA(size, context) {
     this->description = description;
+}
+
+CLGLTextureRGBA::CLGLTextureRGBA(CLGLTextureRGBA&& rhs) noexcept
+    : description{rhs.description}
+    , glTextureID{rhs.glTextureID}
+    , clImageGL{std::move(rhs.clImageGL)}
+    , size{rhs.size} {
+    rhs.glTextureID = 0; // Transfer ownership explicitly
+}
+
+// Move assignment operator
+CLGLTextureRGBA& CLGLTextureRGBA::operator=(CLGLTextureRGBA&& rhs) noexcept {
+    if (this != &rhs) {
+        if (glTextureID) {
+            glDeleteTextures(1, &glTextureID);
+            std::println("Deleted OpenGL texture (move-assignment): {}", glTextureID);
+        }
+
+        description = rhs.description;
+        glTextureID = rhs.glTextureID;
+        clImageGL   = std::move(rhs.clImageGL);
+        size        = rhs.size;
+
+        rhs.glTextureID = 0; // Transfer ownership explicitly
+    }
+    return *this;
 }
 
 void CLGLTextureRGBA::Resize(Dims2D newSize, const cl::Context& context) {
@@ -303,12 +339,16 @@ void CLGLTextureRGBA::Resize(Dims2D newSize, const cl::Context& context) {
     if (res != CL_SUCCESS) {
         std::println("Failed to recreate OpenCL ImageGL: {}", res);
     }
+
+    std::println("Resized OpenCL texture {}: {} to {}x{}", glTextureID, description, size.width, size.height);
 }
 
 inline constexpr auto OpenCLRenderer::SelectConvertKernel(SourceFormat sourceFormat) -> cl::Kernel& {
     switch (sourceFormat) {
     case SourceFormat::RGBA_8888:
         return m_kernels.convertSource_RGBA_8888;
+    case SourceFormat::RGBX_8888:
+        return m_kernels.convertSource_RGBX_8888;
     }
     return m_kernels.convertSource_RGBA_8888; // Default to RGBA_8888 if no match found
 }
@@ -334,7 +374,7 @@ OpenCLRenderer::OpenCLRenderer(const OpenCLDeviceProvider& deviceProviderRef)
     }
 
     m_targetTextures = std::make_unique<TargetTextures>(
-        CLGLTextureRGBA("Soruce Preview"sv, kDefaultSourceSize, m_context),
+        CLGLTextureRGBA("Source Preview"sv, kDefaultSourceSize, m_context),
         CLGLTextureRGBA("False Color"sv, kDefaultSourceSize, m_context),
         CLGLTextureRGBA("Luminance Waveform"sv, kWaveformSize, m_context));
 
@@ -358,6 +398,11 @@ void OpenCLRenderer::ResizeSourceTextures() {
 
     m_targetTextures->sourcePreview.Resize(m_sourceDims, m_context);
     m_targetTextures->falseColor.Resize(m_sourceDims, m_context);
+
+    m_glObjects = {
+        m_targetTextures->sourcePreview.clImageGL,
+        m_targetTextures->falseColor.clImageGL,
+        m_targetTextures->wfLuma.clImageGL};
 }
 
 void OpenCLRenderer::ResizeBuffers() {
@@ -371,6 +416,13 @@ void OpenCLRenderer::ResizeBuffers() {
     m_bufIntermYUV  = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, m_yuvSizeBytes);
 
     m_buffersInitialized = true;
+
+    std::println("Resized OpenCL buffers: {}x{} "
+                 "Source: {} bytes, "
+                 "Interm RGBA: {} bytes, "
+                 "Interm YUV: {} bytes",
+                 m_sourceDims.width, m_sourceDims.height,
+                 m_sourceSizeBytes, m_rgbaSizeBytes, m_yuvSizeBytes);
 }
 
 void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDims, SourceFormat sourceFormat) {
@@ -429,8 +481,7 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
         return;
     }
 
-    cl::NDRange ndrGlobalConvert(m_sourceDims.width,
-                                 m_sourceDims.height);
+    cl::NDRange ndrGlobalConvert(m_sourceDims.width * m_sourceDims.height);
 
     res = m_commandQueue.enqueueWriteBuffer(
         m_bufSource, CL_TRUE, 0, m_sourceSizeBytes, sourceData);
