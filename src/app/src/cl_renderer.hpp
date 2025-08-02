@@ -257,7 +257,7 @@ public:
     bool needsResizeFlag_mainThread{false};
 
     // should be called on the main gl thread
-    void ResizeSourceTextures();
+    void ResizeGLTextures();
 
 private:
     void ResizeBuffers();

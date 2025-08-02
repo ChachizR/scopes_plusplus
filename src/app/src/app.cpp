@@ -205,8 +205,7 @@ void Application::Run() {
         if (source) {
             auto& sourceRenderer = source->GetRenderer();
             if (sourceRenderer.needsResizeFlag_mainThread) {
-                sourceRenderer.ResizeSourceTextures();
-                sourceRenderer.needsResizeFlag_mainThread = false;
+                sourceRenderer.ResizeGLTextures();
             }
 
             auto sourceTextures = sourceRenderer.GetTargetTextures();

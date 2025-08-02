@@ -74,6 +74,10 @@ __kernel void convertSource_RGBA_8888_to_RGBA_YUV(__global const uchar* in_src,
                                                   int                   colorspace) {
     size_t gid = get_global_id(0);
 
+    if (gid >= width * height) {
+        return; // Prevent out-of-bounds access
+    }
+
     uint rgbaPB = gid * 4;
     uint yuvPB  = gid * 3;
 
@@ -114,6 +118,10 @@ __kernel void convertSource_RGBX_8888_to_RGBA_YUV(__global const uchar* in_src,
                                                   uint                  height,
                                                   int                   colorspace) {
     size_t gid = get_global_id(0);
+
+    if (gid >= width * height) {
+        return; // Prevent out-of-bounds access
+    }
 
     uint rgbaPB = gid * 4;
     uint yuvPB  = gid * 3;

@@ -125,6 +125,10 @@ auto OpenCLDeviceProvider::SelectDevice() const -> std::optional<cl::Device> {
         }
     }
 
+    if (selectedDevice) {
+        std::println("Selected OpenCL device: {}", selectedDevice->getInfo<CL_DEVICE_NAME>());
+    }
+
     return selectedDevice;
 }
 
@@ -319,12 +323,15 @@ void CLGLTextureRGBA::Resize(Dims2D newSize, const cl::Context& context) {
         return; // No resize needed
     }
     size = newSize;
+    glDeleteTextures(1, &glTextureID);
+    glGenTextures(1, &glTextureID);
     glBindTexture(GL_TEXTURE_2D, glTextureID);
     glTexImage2D(
         GL_TEXTURE_2D, 0, GL_RGBA8,
         size.width, size.height, 0,
         GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glBindTexture(GL_TEXTURE_2D, 0);
+
     // Recreate the OpenCL image
     cl_int res = CL_SUCCESS;
 
@@ -340,7 +347,15 @@ void CLGLTextureRGBA::Resize(Dims2D newSize, const cl::Context& context) {
         std::println("Failed to recreate OpenCL ImageGL: {}", res);
     }
 
+    const auto width = clImageGL.getImageInfo<CL_IMAGE_WIDTH>(&res);
+    const auto height = clImageGL.getImageInfo<CL_IMAGE_HEIGHT>(&res);
+    if (res != CL_SUCCESS) {
+        std::println("Failed to get OpenCL ImageGL size: {}", res);
+        return;
+    }
+
     std::println("Resized OpenCL texture {}: {} to {}x{}", glTextureID, description, size.width, size.height);
+    std::println("OpenCL ImageGL size: {}x{}", width, height);
 }
 
 inline constexpr auto OpenCLRenderer::SelectConvertKernel(SourceFormat sourceFormat) -> cl::Kernel& {
@@ -391,8 +406,14 @@ OpenCLRenderer::OpenCLRenderer(const OpenCLDeviceProvider& deviceProviderRef)
     }
 }
 
-void OpenCLRenderer::ResizeSourceTextures() {
+void OpenCLRenderer::ResizeGLTextures() {
+    if (!needsResizeFlag_mainThread) {
+        std::println("The textures don't need resizing!");
+        return;
+    }
+
     if (!m_targetTextures) {
+        std::println("Target textures are not initialized.");
         return;
     }
 
@@ -403,6 +424,8 @@ void OpenCLRenderer::ResizeSourceTextures() {
         m_targetTextures->sourcePreview.clImageGL,
         m_targetTextures->falseColor.clImageGL,
         m_targetTextures->wfLuma.clImageGL};
+
+    needsResizeFlag_mainThread = false;
 }
 
 void OpenCLRenderer::ResizeBuffers() {
@@ -415,14 +438,14 @@ void OpenCLRenderer::ResizeBuffers() {
     m_bufIntermRGBA = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, m_rgbaSizeBytes);
     m_bufIntermYUV  = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, m_yuvSizeBytes);
 
-    m_buffersInitialized = true;
-
     std::println("Resized OpenCL buffers: {}x{} "
                  "Source: {} bytes, "
                  "Interm RGBA: {} bytes, "
                  "Interm YUV: {} bytes",
                  m_sourceDims.width, m_sourceDims.height,
                  m_sourceSizeBytes, m_rgbaSizeBytes, m_yuvSizeBytes);
+
+    m_buffersInitialized = true;
 }
 
 void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDims, SourceFormat sourceFormat) {

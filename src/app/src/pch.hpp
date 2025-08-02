@@ -50,6 +50,7 @@ using namespace std::literals::chrono_literals;
 
 #include <thread>
 #include <memory>
+#include <atomic>
 
 #include <filesystem>
 #include <fstream>
