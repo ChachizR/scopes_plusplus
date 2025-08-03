@@ -129,10 +129,10 @@ __kernel void convertSource_RGBX_8888_to_RGBA_YUV(__global const uchar* in_src,
     uchar r, g, b, a;
     uchar y, u, v;
 
-    b = in_src[rgbaPB + 0];
-    a = in_src[rgbaPB + 1];
-    r = in_src[rgbaPB + 2];
-    g = in_src[rgbaPB + 3];
+    r = in_src[rgbaPB + 0];
+    g = in_src[rgbaPB + 1];
+    b = in_src[rgbaPB + 2];
+    a = in_src[rgbaPB + 3];
 
     rgbToYuv(r, g, b, &y, &u, &v, colorspace);
 

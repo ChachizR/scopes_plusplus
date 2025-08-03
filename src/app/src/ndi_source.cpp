@@ -70,10 +70,22 @@ auto NDISource::HandleVideoFrame(const NDIlib_video_frame_v2_t& videoFrame) noex
 
     const auto sourceFormat = SourceFormatFromNDIFourCC(videoFrame.FourCC);
 
+    const auto startTime = std::chrono::steady_clock::now();
+
     m_renderer.ExecutePipeline(
         videoFrame.p_data,
         Dims2D{(uint32_t)videoFrame.xres, (uint32_t)videoFrame.yres},
         sourceFormat);
+
+    const auto endTime = std::chrono::steady_clock::now();
+
+    const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+
+    std::println(
+        "NDI Frame received: {}x{} {}, duration: {}us",
+        videoFrame.xres, videoFrame.yres,
+        static_cast<int>(sourceFormat),
+        duration.count());
 
     return ErrorCode::None;
 }

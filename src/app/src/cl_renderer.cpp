@@ -258,17 +258,28 @@ auto OpenCLDeviceProvider::CreateKernels() const -> std::expected<RenderPipeline
     return kernels;
 }
 
-CLGLTextureRGBA::CLGLTextureRGBA(Dims2D size, const cl::Context& context)
-    : size{size} {
-    glGenTextures(1, &glTextureID);
-    glBindTexture(GL_TEXTURE_2D, glTextureID);
+void CreateNewGLRGBATexture(GLuint& textureID, Dims2D dims) {
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
     glTexImage2D(
         GL_TEXTURE_2D, 0, GL_RGBA8,
-        size.width, size.height, 0,
+        dims.width, dims.height, 0,
         GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void DeleteGLRGBATexture(GLuint& textureID) {
+    if (textureID != 0) {
+        glDeleteTextures(1, &textureID);
+        textureID = 0; // Reset to 0 after deletion
+    }
+}
+
+CLGLTextureRGBA::CLGLTextureRGBA(Dims2D size, const cl::Context& context)
+    : size{size} {
+    CreateNewGLRGBATexture(glTextureID, size);
 
     cl_int res = CL_SUCCESS;
 
@@ -322,15 +333,10 @@ void CLGLTextureRGBA::Resize(Dims2D newSize, const cl::Context& context) {
     if (newSize.width == size.width && newSize.height == size.height) {
         return; // No resize needed
     }
+
     size = newSize;
-    glDeleteTextures(1, &glTextureID);
-    glGenTextures(1, &glTextureID);
-    glBindTexture(GL_TEXTURE_2D, glTextureID);
-    glTexImage2D(
-        GL_TEXTURE_2D, 0, GL_RGBA8,
-        size.width, size.height, 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    DeleteGLRGBATexture(glTextureID);
+    CreateNewGLRGBATexture(glTextureID, size);
 
     // Recreate the OpenCL image
     cl_int res = CL_SUCCESS;
@@ -347,7 +353,7 @@ void CLGLTextureRGBA::Resize(Dims2D newSize, const cl::Context& context) {
         std::println("Failed to recreate OpenCL ImageGL: {}", res);
     }
 
-    const auto width = clImageGL.getImageInfo<CL_IMAGE_WIDTH>(&res);
+    const auto width  = clImageGL.getImageInfo<CL_IMAGE_WIDTH>(&res);
     const auto height = clImageGL.getImageInfo<CL_IMAGE_HEIGHT>(&res);
     if (res != CL_SUCCESS) {
         std::println("Failed to get OpenCL ImageGL size: {}", res);
@@ -507,7 +513,7 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
     cl::NDRange ndrGlobalConvert(m_sourceDims.width * m_sourceDims.height);
 
     res = m_commandQueue.enqueueWriteBuffer(
-        m_bufSource, CL_TRUE, 0, m_sourceSizeBytes, sourceData);
+        m_bufSource, CL_FALSE, 0, m_sourceSizeBytes, sourceData);
 
     if (res != CL_SUCCESS) [[unlikely]] {
         std::println("Failed to write source data to OpenCL buffer: {}", res);
