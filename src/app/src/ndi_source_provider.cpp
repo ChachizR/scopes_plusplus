@@ -37,7 +37,7 @@ void NDISourceProvider::EnumerationLoop() {
         const auto sources   = NDIlib_find_get_current_sources(m_findInstance, &noSources);
 
         if (sources) {
-            m_sources = std::span<const NDIlib_source_t>(sources, noSources);
+            m_sources = std::span{sources, noSources};
         } else {
             m_sources = {};
         }

@@ -2,9 +2,7 @@
 
 #include "pch.hpp"
 
-#include "ui.hpp"
-#include "util.hpp"
-#include "bitmap.hpp"
+#include "utils.hpp"
 #include "video_source.hpp"
 #include "cl_renderer.hpp"
 #include "ndi_source_provider.hpp"

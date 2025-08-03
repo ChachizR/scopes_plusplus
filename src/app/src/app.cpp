@@ -210,10 +210,16 @@ void Application::Run() {
 
             auto sourceTextures = sourceRenderer.GetTargetTextures();
 
-            ImGui::Begin("ImagePreview", nullptr, ImGuiWindowFlags_NoCollapse);
+            auto& sourcePreview = sourceTextures->sourcePreview;
 
-            ImGuiImageRender(sourceTextures->sourcePreview);
+            ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+            ImGuiImageRender(sourcePreview);
+            ImGui::End();
 
+            auto& wfLuma = sourceTextures->wfLuma;
+
+            ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+            ImGuiImageRender(wfLuma);
             ImGui::End();
         }
 

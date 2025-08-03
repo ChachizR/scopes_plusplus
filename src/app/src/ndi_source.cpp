@@ -23,7 +23,7 @@ auto NDISource::GetName() const noexcept -> std::string_view {
 void NDISource::ReceiveLoop() {
     const NDIlib_recv_create_v3_t recvSettings{
         m_source,
-        NDIlib_recv_color_format_RGBX_RGBA,
+        NDIlib_recv_color_format_fastest,
         NDIlib_recv_bandwidth_highest,
         false,
         "Scopes++ Receiver"};

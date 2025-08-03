@@ -1,115 +1,11 @@
 #pragma once
 
 #include "pch.hpp"
-#include "error_codes.hpp"
+
+#include "utils.hpp"
+#include "cl_device_provider.hpp"
 
 namespace scpp {
-struct RenderPipelineKernels {
-    bool       initialized{false};
-    cl::Kernel convertSource_RGBA_8888;
-    cl::Kernel convertSource_RGBX_8888;
-};
-
-class OpenCLDeviceProvider {
-private:
-    cl::Device            m_device;
-    cl::Context           m_context;
-    RenderPipelineKernels m_kernels;
-
-    static constexpr float c_FactComputeUnits   = 40.0f;
-    static constexpr float c_FactClockFrequency = 2000.0f;
-    static constexpr float c_FactGlobalMemory   = 8.0f * 0x1p30;
-    static constexpr float c_FactMaxMemAlloc    = 8.0f * 0x1p30 * 2.f;
-    static constexpr float c_FactLocalMemory    = 48.0f * 1024;
-    static constexpr float c_FactMaxWorkGroup   = 256.0f;
-    static constexpr float c_FactMaxIm2DWidth   = 8192.0f;
-    static constexpr float c_FactMaxSamplers    = 16.0f;
-
-    static constexpr auto c_KernelSourcePath                   = "./kernels/renderpipeline.cl"sv;
-    static constexpr auto c_KernelName_convertSource_RGBA_8888 = "convertSource_RGBA_8888_to_RGBA_YUV"sv;
-    static constexpr auto c_KernelName_convertSource_RGBX_8888 = "convertSource_RGBX_8888_to_RGBA_YUV"sv;
-
-    bool m_initialized{false};
-
-public:
-    OpenCLDeviceProvider();
-
-private:
-    [[nodiscard]]
-    auto GetDeviceScore(const cl::Device& device) const noexcept -> float;
-
-    [[nodiscard]]
-    auto SelectDevice() const -> std::optional<cl::Device>;
-
-    [[nodiscard]]
-    auto CreateContext() -> std::optional<cl::Context>;
-
-    auto CreateKernels() const -> std::expected<RenderPipelineKernels, ErrorCode>;
-
-public:
-    [[nodiscard]]
-    constexpr bool IsInitialized() const noexcept {
-        return m_initialized;
-    }
-
-    [[nodiscard]]
-    constexpr const cl::Device* GetDevice() const noexcept {
-        return m_initialized ? &m_device : nullptr;
-    }
-
-    [[nodiscard]]
-    constexpr const cl::Context* GetContext() const noexcept {
-        return m_initialized ? &m_context : nullptr;
-    }
-
-    [[nodiscard]]
-    const RenderPipelineKernels& GetKernels() const noexcept {
-        return m_kernels;
-    }
-};
-
-struct Dims2D {
-    uint32_t width;
-    uint32_t height;
-
-    constexpr Dims2D(uint32_t w, uint32_t h)
-        : width{w}
-        , height{h} {}
-
-    constexpr bool operator==(const Dims2D& other) const noexcept {
-        return width == other.width && height == other.height;
-    }
-
-    constexpr uint64_t Area() const noexcept {
-        return static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
-    }
-};
-
-struct CLGLTextureRGBA {
-    std::string_view description{};
-    GLuint           glTextureID;
-    cl::ImageGL      clImageGL;
-
-    Dims2D size;
-
-    CLGLTextureRGBA(Dims2D size, const cl::Context& context);
-    CLGLTextureRGBA(std::string_view description, Dims2D size, const cl::Context& context);
-
-    ~CLGLTextureRGBA() {
-        if (glTextureID == 0)
-            return;
-        glDeleteTextures(1, &glTextureID);
-        std::println("Deleted OpenGL texture: {}", glTextureID);
-    }
-
-    CLGLTextureRGBA(const CLGLTextureRGBA&)            = delete;
-    CLGLTextureRGBA& operator=(const CLGLTextureRGBA&) = delete;
-    CLGLTextureRGBA(CLGLTextureRGBA&& rhs) noexcept;
-    CLGLTextureRGBA& operator=(CLGLTextureRGBA&& rhs) noexcept;
-
-    // should be called on the main gl thread
-    void Resize(Dims2D newSize, const cl::Context& context);
-};
 
 static inline void ImGuiImageRender(
     const CLGLTextureRGBA& texture) {
@@ -133,13 +29,26 @@ struct TargetTextures {
     CLGLTextureRGBA sourcePreview;
     CLGLTextureRGBA falseColor;
     CLGLTextureRGBA wfLuma;
+    CLGLTextureRGBA wfRGB;
+    CLGLTextureRGBA wfRGBParade;
+    CLGLTextureRGBA wfRGBBlacks;
+    CLGLTextureRGBA wfYUVParade;
 
     TargetTextures(CLGLTextureRGBA&& sourcePreview,
                    CLGLTextureRGBA&& falseColor,
-                   CLGLTextureRGBA&& wfLuma)
+                   CLGLTextureRGBA&& wfLuma,
+                   CLGLTextureRGBA&& wfRGB,
+                   CLGLTextureRGBA&& wfRGBParade,
+                   CLGLTextureRGBA&& wfRGBBlacks,
+                   CLGLTextureRGBA&& wfYUVParade)
+
         : sourcePreview{std::move(sourcePreview)}
         , falseColor{std::move(falseColor)}
-        , wfLuma{std::move(wfLuma)} {}
+        , wfLuma{std::move(wfLuma)}
+        , wfRGB{std::move(wfRGB)}
+        , wfRGBParade{std::move(wfRGBParade)}
+        , wfRGBBlacks{std::move(wfRGBBlacks)}
+        , wfYUVParade{std::move(wfYUVParade)} {}
 };
 
 enum class SourceFormat {
@@ -147,10 +56,10 @@ enum class SourceFormat {
     RGBA_8888,
     RGBX_8888,
     BGRA_8888,
-    ARGB_8888,
     BGRX_8888,
-    BGR_888_InvY,
+    ARGB_8888,
     RGB_888,
+    BGR_888_InvY,
     UYVY_422,
     YUYV_422,
     NV12,
@@ -218,9 +127,9 @@ private:
 
     bool m_initialized{false};
 
-    static constexpr Dims2D kDefaultSourceSize{1920, 1080};
-    static constexpr Dims2D kWaveformSize{580, 256};
-    static constexpr Dims2D kScopeSize{256, 256};
+    static constexpr Dims2D c_DefaultSourceSize{1920, 1080};
+    static constexpr Dims2D c_WaveformSize{580, 256};
+    static constexpr Dims2D c_ScopeSize{256, 256};
 
     std::unique_ptr<TargetTextures> m_targetTextures = nullptr;
 
@@ -234,11 +143,14 @@ private:
     cl::Buffer m_bufIntermRGBA;
     cl::Buffer m_bufIntermYUV;
 
+    cl::Buffer m_bufAccRGB, m_bufAccYUV;
+    cl::Buffer m_bufAcc2D_UV_RGBA, m_bufAcc2D_XYZ_RGBA, m_bufAcc2D_DIA_RGBA;
+
     bool m_buffersInitialized{false};
 
     std::vector<cl::Memory> m_glObjects;
 
-    Dims2D       m_sourceDims{kDefaultSourceSize};
+    Dims2D       m_sourceDims{c_DefaultSourceSize};
     SourceFormat m_sourceFormat{SourceFormat::RGBA_8888};
 
     [[nodiscard]]
@@ -260,6 +172,17 @@ public:
     void ResizeGLTextures();
 
 private:
+    void UpdateGLObjects() {
+        m_glObjects = {
+            m_targetTextures->sourcePreview.clImageGL,
+            m_targetTextures->falseColor.clImageGL,
+            m_targetTextures->wfLuma.clImageGL,
+            m_targetTextures->wfRGB.clImageGL,
+            m_targetTextures->wfRGBParade.clImageGL,
+            m_targetTextures->wfRGBBlacks.clImageGL,
+            m_targetTextures->wfYUVParade.clImageGL};
+    }
+
     void ResizeBuffers();
 
 public:

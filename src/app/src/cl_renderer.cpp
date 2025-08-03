@@ -1,368 +1,12 @@
 #include "cl_renderer.hpp"
 
+#define CHECK_CL_ERROR_RET(res, msg)                     \
+    if (res != CL_SUCCESS) [[unlikely]] {                \
+        std::println("OpenCL Error: {} - {}", msg, res); \
+        return;                                          \
+    }
+
 namespace scpp {
-
-OpenCLDeviceProvider::OpenCLDeviceProvider() {
-    const auto deviceOpt = SelectDevice();
-
-    if (!deviceOpt) {
-
-        m_initialized = false;
-        std::println("No suitable OpenCL device found.");
-        return;
-    }
-
-    m_device = *deviceOpt;
-
-    const auto contextOpt = CreateContext();
-
-    if (!contextOpt) {
-        std::println("Failed to create OpenCL context.");
-        m_initialized = false;
-        return;
-    }
-
-    m_context = *contextOpt;
-
-    auto kernelsResult = CreateKernels();
-
-    if (!kernelsResult) {
-        std::println("Failed to create OpenCL kernels: {}", kernelsResult.error());
-        m_initialized = false;
-        return;
-    }
-
-    m_kernels = *kernelsResult;
-
-    m_initialized = true;
-}
-
-auto OpenCLDeviceProvider::GetDeviceScore(const cl::Device& device) const noexcept -> float {
-    const auto platform = device.getInfo<CL_DEVICE_PLATFORM>();
-
-    const auto platform_vendor  = platform.getInfo<CL_PLATFORM_VENDOR>();
-    const auto platform_name    = platform.getInfo<CL_PLATFORM_NAME>();
-    const auto platform_version = platform.getInfo<CL_PLATFORM_VERSION>();
-
-    const auto name    = device.getInfo<CL_DEVICE_NAME>();
-    const auto vendor  = device.getInfo<CL_DEVICE_VENDOR>();
-    const auto profile = device.getInfo<CL_DEVICE_PROFILE>();
-    const auto version = device.getInfo<CL_DEVICE_VERSION>();
-
-    const auto computeUnits      = device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
-    const auto scoreComputeUnits = (float)computeUnits / c_FactComputeUnits;
-
-    float score = 1.f;
-    score *= scoreComputeUnits;
-
-    const auto clockFrequency      = device.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>();
-    const auto scoreClockFrequency = (float)clockFrequency / c_FactClockFrequency;
-
-    score *= scoreClockFrequency;
-
-    const auto globalMemory      = device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
-    const auto scoreGlobalMemory = (float)globalMemory / c_FactGlobalMemory;
-
-    score *= scoreGlobalMemory;
-
-    const auto memAllocSize     = device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
-    const auto scoreMaxMemAlloc = (float)memAllocSize / c_FactMaxMemAlloc;
-
-    score *= scoreMaxMemAlloc;
-
-    // const auto localMemory      = device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>();
-    // const auto scoreLocalMemory = (float)localMemory / c_FactLocalMemory;
-    //  score *= scoreLocalMemory;
-
-    const auto maxWorkGroupSize  = device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
-    const auto scoreMaxWorkGroup = (float)maxWorkGroupSize / c_FactMaxWorkGroup;
-    score *= scoreMaxWorkGroup;
-
-    const auto maxIm2DWidth = device.getInfo<CL_DEVICE_IMAGE2D_MAX_WIDTH>();
-    // const auto maxIm2DHeight = device.getInfo<CL_DEVICE_IMAGE2D_MAX_HEIGHT>();
-
-    const auto scoreIm2DWidth = (float)maxIm2DWidth / c_FactMaxIm2DWidth;
-
-    score *= scoreIm2DWidth;
-
-    const auto maxSamplers = device.getInfo<CL_DEVICE_MAX_SAMPLERS>();
-
-    const auto scoreMaxSamplers = (float)maxSamplers / c_FactMaxSamplers;
-
-    score *= scoreMaxSamplers;
-
-    if (maxWorkGroupSize < 256) {
-        score = 0;
-    }
-
-    return score;
-}
-
-auto OpenCLDeviceProvider::SelectDevice() const -> std::optional<cl::Device> {
-    std::vector<cl::Platform> platforms;
-    cl::Platform::get(&platforms);
-
-    std::optional<cl::Device> selectedDevice;
-
-    float bestScore = 0.0f;
-
-    for (const auto& platform : platforms) {
-        std::vector<cl::Device> devices;
-        platform.getDevices(CL_DEVICE_TYPE_GPU, &devices);
-
-        for (const auto& device : devices) {
-            auto deviceType = device.getInfo<CL_DEVICE_TYPE>();
-            if (deviceType != CL_DEVICE_TYPE_GPU) {
-                continue; // Skip non-GPU devices
-            }
-
-            float score = GetDeviceScore(device);
-
-            if (score > bestScore) {
-                bestScore      = score;
-                selectedDevice = device;
-            }
-        }
-    }
-
-    if (selectedDevice) {
-        std::println("Selected OpenCL device: {}", selectedDevice->getInfo<CL_DEVICE_NAME>());
-    }
-
-    return selectedDevice;
-}
-
-auto OpenCLDeviceProvider::CreateContext() -> std::optional<cl::Context> {
-    cl_int res = CL_SUCCESS;
-
-    auto platform = m_device.getInfo<CL_DEVICE_PLATFORM>(&res);
-
-    if (res != CL_SUCCESS) {
-        std::println("Failed to get OpenCL platform: {}", res);
-        return std::nullopt;
-    }
-
-#ifdef _WIN32
-    HGLRC                 nativeGLCtx = wglGetCurrentContext();
-    HDC                   nativeDC    = wglGetCurrentDC();
-    cl_context_properties props[]     = {
-        CL_GL_CONTEXT_KHR, (cl_context_properties)nativeGLCtx,
-        CL_WGL_HDC_KHR, (cl_context_properties)nativeDC,
-        CL_CONTEXT_PLATFORM, (cl_context_properties)(platform()),
-        0};
-#elif defined(__APPLE__)
-    CGLContextObj         cglCtx   = CGLGetCurrentContext();
-    CGLShareGroupObj      shareGrp = CGLGetShareGroup(cglCtx);
-    cl_context_properties props[]  = {
-        CL_CONTEXT_PROPERTY_USE_CGL_SHAREGROUP_APPLE,
-        (cl_context_properties)shareGrp,
-        CL_CONTEXT_PLATFORM, (cl_context_properties)(platform()),
-        0};
-#else
-    GLXContext            glxCtx  = glXGetCurrentContext();
-    Display*              dpy     = glXGetCurrentDisplay();
-    cl_context_properties props[] = {
-        CL_GL_CONTEXT_KHR, (cl_context_properties)glxCtx,
-        CL_GLX_DISPLAY_KHR, (cl_context_properties)dpy,
-        CL_CONTEXT_PLATFORM, (cl_context_properties)(platform()),
-        0};
-#endif
-
-    cl::Context context(
-        std::vector<cl::Device>{m_device},
-        props,
-        nullptr,
-        nullptr,
-        &res);
-
-    if (res != CL_SUCCESS) {
-        std::println("Failed to create OpenCL context: {}", res);
-        return std::nullopt;
-    }
-
-    return context;
-}
-
-auto OpenCLDeviceProvider::CreateKernels() const -> std::expected<RenderPipelineKernels, ErrorCode> {
-    const auto path = std::filesystem::path{c_KernelSourcePath};
-
-    if (!std::filesystem::exists(path)) {
-        std::println("OpenCL kernel source file not found: {}", path.string());
-        return std::unexpected(ErrorCode::KernelSourceNotFound);
-    }
-
-    std::ifstream kernelFile(path);
-    if (!kernelFile.is_open()) {
-        std::println("Failed to open OpenCL kernel source file: {}", path.string());
-        return std::unexpected(ErrorCode::FSNotFound);
-    }
-
-    std::string kernelSource((std::istreambuf_iterator<char>(kernelFile)),
-                             std::istreambuf_iterator<char>());
-
-    kernelFile.close();
-
-    cl_int      res = CL_SUCCESS;
-    cl::Program program(m_context, kernelSource, false, &res);
-
-    if (res != CL_SUCCESS) {
-        std::println("Failed to create OpenCL program: {}", res);
-        return std::unexpected(ErrorCode::KernelCreateProgramFailed);
-    }
-
-    res = program.build({m_device});
-
-    if (res != CL_SUCCESS) {
-        std::println("Failed to build OpenCL program: {}", res);
-
-        cl_build_status status = program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(m_device, &res);
-
-        if (res != CL_SUCCESS) {
-            std::println("Failed to get build status: {}", res);
-            return std::unexpected(ErrorCode::KernelProgramBuildFailed);
-        }
-
-        std::string log = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device, &res);
-
-        if (res != CL_SUCCESS) {
-            std::println("Failed to get build log: {}", res);
-            return std::unexpected(ErrorCode::KernelProgramBuildFailed);
-        }
-
-        std::println("OpenCL build status: {}", status);
-        std::println("OpenCL build log:\n{}", log);
-
-        return std::unexpected(ErrorCode::KernelProgramBuildFailed);
-    }
-
-    RenderPipelineKernels kernels;
-
-    kernels.convertSource_RGBA_8888 =
-        cl::Kernel(program, c_KernelName_convertSource_RGBA_8888.data(), &res);
-
-    if (res != CL_SUCCESS) {
-        std::println("Failed to create OpenCL kernel: {} {}", c_KernelName_convertSource_RGBA_8888, res);
-        return std::unexpected(ErrorCode::KernelCreateKernelFailed);
-    }
-
-    kernels.convertSource_RGBX_8888 =
-        cl::Kernel(program, c_KernelName_convertSource_RGBX_8888.data(), &res);
-
-    if (res != CL_SUCCESS) {
-        std::println("Failed to create OpenCL kernel: {} {}", c_KernelName_convertSource_RGBX_8888, res);
-        return std::unexpected(ErrorCode::KernelCreateKernelFailed);
-    }
-
-    kernels.initialized = true;
-
-    return kernels;
-}
-
-void CreateNewGLRGBATexture(GLuint& textureID, Dims2D dims) {
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-    glTexImage2D(
-        GL_TEXTURE_2D, 0, GL_RGBA8,
-        dims.width, dims.height, 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
-}
-
-void DeleteGLRGBATexture(GLuint& textureID) {
-    if (textureID != 0) {
-        glDeleteTextures(1, &textureID);
-        textureID = 0; // Reset to 0 after deletion
-    }
-}
-
-CLGLTextureRGBA::CLGLTextureRGBA(Dims2D size, const cl::Context& context)
-    : size{size} {
-    CreateNewGLRGBATexture(glTextureID, size);
-
-    cl_int res = CL_SUCCESS;
-
-    clImageGL = cl::ImageGL(
-        context,
-        CL_MEM_WRITE_ONLY,
-        GL_TEXTURE_2D,
-        0,
-        glTextureID,
-        &res);
-
-    if (res != CL_SUCCESS) {
-        std::println("Failed to create OpenCL ImageGL: {}", res);
-    }
-
-    std::println("Created OpenCL texture {}: {} with size {}x{}", glTextureID, description, size.width, size.height);
-}
-
-CLGLTextureRGBA::CLGLTextureRGBA(std::string_view description, Dims2D size, const cl::Context& context)
-    : CLGLTextureRGBA(size, context) {
-    this->description = description;
-}
-
-CLGLTextureRGBA::CLGLTextureRGBA(CLGLTextureRGBA&& rhs) noexcept
-    : description{rhs.description}
-    , glTextureID{rhs.glTextureID}
-    , clImageGL{std::move(rhs.clImageGL)}
-    , size{rhs.size} {
-    rhs.glTextureID = 0; // Transfer ownership explicitly
-}
-
-// Move assignment operator
-CLGLTextureRGBA& CLGLTextureRGBA::operator=(CLGLTextureRGBA&& rhs) noexcept {
-    if (this != &rhs) {
-        if (glTextureID) {
-            glDeleteTextures(1, &glTextureID);
-            std::println("Deleted OpenGL texture (move-assignment): {}", glTextureID);
-        }
-
-        description = rhs.description;
-        glTextureID = rhs.glTextureID;
-        clImageGL   = std::move(rhs.clImageGL);
-        size        = rhs.size;
-
-        rhs.glTextureID = 0; // Transfer ownership explicitly
-    }
-    return *this;
-}
-
-void CLGLTextureRGBA::Resize(Dims2D newSize, const cl::Context& context) {
-    if (newSize.width == size.width && newSize.height == size.height) {
-        return; // No resize needed
-    }
-
-    size = newSize;
-    DeleteGLRGBATexture(glTextureID);
-    CreateNewGLRGBATexture(glTextureID, size);
-
-    // Recreate the OpenCL image
-    cl_int res = CL_SUCCESS;
-
-    clImageGL = cl::ImageGL(
-        context,
-        CL_MEM_WRITE_ONLY,
-        GL_TEXTURE_2D,
-        0,
-        glTextureID,
-        &res);
-
-    if (res != CL_SUCCESS) {
-        std::println("Failed to recreate OpenCL ImageGL: {}", res);
-    }
-
-    const auto width  = clImageGL.getImageInfo<CL_IMAGE_WIDTH>(&res);
-    const auto height = clImageGL.getImageInfo<CL_IMAGE_HEIGHT>(&res);
-    if (res != CL_SUCCESS) {
-        std::println("Failed to get OpenCL ImageGL size: {}", res);
-        return;
-    }
-
-    std::println("Resized OpenCL texture {}: {} to {}x{}", glTextureID, description, size.width, size.height);
-    std::println("OpenCL ImageGL size: {}x{}", width, height);
-}
 
 inline constexpr auto OpenCLRenderer::SelectConvertKernel(SourceFormat sourceFormat) -> cl::Kernel& {
     switch (sourceFormat) {
@@ -370,6 +14,8 @@ inline constexpr auto OpenCLRenderer::SelectConvertKernel(SourceFormat sourceFor
         return m_kernels.convertSource_RGBA_8888;
     case SourceFormat::RGBX_8888:
         return m_kernels.convertSource_RGBX_8888;
+    case SourceFormat::UYVY_422:
+        return m_kernels.convertSource_UYVY_422;
     }
     return m_kernels.convertSource_RGBA_8888; // Default to RGBA_8888 if no match found
 }
@@ -395,13 +41,15 @@ OpenCLRenderer::OpenCLRenderer(const OpenCLDeviceProvider& deviceProviderRef)
     }
 
     m_targetTextures = std::make_unique<TargetTextures>(
-        CLGLTextureRGBA("Source Preview"sv, kDefaultSourceSize, m_context),
-        CLGLTextureRGBA("False Color"sv, kDefaultSourceSize, m_context),
-        CLGLTextureRGBA("Luminance Waveform"sv, kWaveformSize, m_context));
+        CLGLTextureRGBA("Source Preview"sv, c_DefaultSourceSize, m_context),
+        CLGLTextureRGBA("False Color"sv, c_DefaultSourceSize, m_context),
+        CLGLTextureRGBA("Luminance Waveform"sv, c_WaveformSize, m_context),
+        CLGLTextureRGBA("RGB Waveform"sv, c_WaveformSize, m_context),
+        CLGLTextureRGBA("RGB Parade"sv, c_WaveformSize, m_context),
+        CLGLTextureRGBA("RGB Blacklevel"sv, c_WaveformSize, m_context),
+        CLGLTextureRGBA("YUV Parade"sv, c_WaveformSize, m_context));
 
-    m_glObjects = {m_targetTextures->sourcePreview.clImageGL,
-                   m_targetTextures->falseColor.clImageGL,
-                   m_targetTextures->wfLuma.clImageGL};
+    UpdateGLObjects();
 
     m_sourceFormat = SourceFormat::unknown;
     m_kernels      = m_deviceProviderRef.GetKernels();
@@ -426,10 +74,7 @@ void OpenCLRenderer::ResizeGLTextures() {
     m_targetTextures->sourcePreview.Resize(m_sourceDims, m_context);
     m_targetTextures->falseColor.Resize(m_sourceDims, m_context);
 
-    m_glObjects = {
-        m_targetTextures->sourcePreview.clImageGL,
-        m_targetTextures->falseColor.clImageGL,
-        m_targetTextures->wfLuma.clImageGL};
+    UpdateGLObjects();
 
     needsResizeFlag_mainThread = false;
 }
@@ -450,6 +95,19 @@ void OpenCLRenderer::ResizeBuffers() {
                  "Interm YUV: {} bytes",
                  m_sourceDims.width, m_sourceDims.height,
                  m_sourceSizeBytes, m_rgbaSizeBytes, m_yuvSizeBytes);
+
+    if (!m_buffersInitialized) [[unlikely]] {
+        cl::size_type wfAccSize = c_WaveformSize.Area() * sizeof(cl_uint) * 3;
+
+        m_bufAccRGB = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, wfAccSize);
+        m_bufAccYUV = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, wfAccSize);
+
+        cl::size_type scopeAccSize = c_ScopeSize.Area() * sizeof(cl_uint) * 4;
+
+        m_bufAcc2D_UV_RGBA  = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, scopeAccSize);
+        m_bufAcc2D_XYZ_RGBA = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, scopeAccSize);
+        m_bufAcc2D_DIA_RGBA = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, scopeAccSize);
+    }
 
     m_buffersInitialized = true;
 }
@@ -488,6 +146,8 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
     if (m_sourceSizeBytes == 0) [[unlikely]]
         return;
 
+    /// CONVERT KERNEL
+
     cl::Kernel& convert_kernel = SelectConvertKernel(m_sourceFormat);
 
     if (!convert_kernel()) [[unlikely]] {
@@ -505,27 +165,81 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
     res += convert_kernel.setArg<cl_uint>(5, m_sourceDims.height);
     res += convert_kernel.setArg<cl_int>(6, static_cast<int>(YUVColorSpace::BT709));
 
-    if (res != CL_SUCCESS) [[unlikely]] {
-        std::println("Failed to set OpenCL kernel arguments");
-        return;
-    }
+    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL convert kernel arguments");
 
     cl::NDRange ndrGlobalConvert(m_sourceDims.width * m_sourceDims.height);
 
-    res = m_commandQueue.enqueueWriteBuffer(
-        m_bufSource, CL_FALSE, 0, m_sourceSizeBytes, sourceData);
+    /// ACCUMULATE KERNEL
 
-    if (res != CL_SUCCESS) [[unlikely]] {
-        std::println("Failed to write source data to OpenCL buffer: {}", res);
-        return;
+    res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(0, m_bufIntermRGBA);
+    res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(1, m_bufIntermYUV);
+    res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(2, m_bufAccRGB);
+    res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(3, m_bufAccYUV);
+    res += m_kernels.accumulateWaveforms.setArg<cl_uint>(4, m_sourceDims.width);
+    res += m_kernels.accumulateWaveforms.setArg<cl_uint>(5, m_sourceDims.height);
+    res += m_kernels.accumulateWaveforms.setArg<cl_uchar>(6, 0);
+    res += m_kernels.accumulateWaveforms.setArg<CLRect2D>(7, CLRect2D{0, 0, 0, 0});
+
+    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate kernel arguments");
+
+    static constexpr size_t localHistKernelY = c_WaveformSize.height;
+
+    size_t globalHeight = ((sourceDims.height + localHistKernelY - 1) / localHistKernelY) * localHistKernelY;
+
+    cl::NDRange ndrGlobalAccWF((std::max)(sourceDims.width, c_WaveformSize.width), globalHeight);
+    cl::NDRange ndrLocalAccWF(1, localHistKernelY);
+
+    /// CREATE IMAGE KERNEL
+
+    float sampleCount = std::ceil(static_cast<float>(sourceDims.width) / static_cast<float>(c_WaveformSize.width));
+
+    float brightness = (1.f + 8.f * (1080.f / (float)sourceDims.height)) / sampleCount;
+
+    res += m_kernels.createWaveformImages.setArg<cl::Buffer>(0, m_bufAccRGB);
+    res += m_kernels.createWaveformImages.setArg<cl::Buffer>(1, m_bufAccYUV);
+    res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(2, m_targetTextures->wfLuma.clImageGL);
+    res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(3, m_targetTextures->wfRGB.clImageGL);
+    res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(4, m_targetTextures->wfRGBParade.clImageGL);
+    res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(5, m_targetTextures->wfRGBBlacks.clImageGL);
+    res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(6, m_targetTextures->wfYUVParade.clImageGL);
+    res += m_kernels.createWaveformImages.setArg<cl_uint>(7, sourceDims.width);
+    res += m_kernels.createWaveformImages.setArg<cl_int>(8, static_cast<cl_int>(YUVColorSpace::BT709));
+    res += m_kernels.createWaveformImages.setArg<cl_float>(9, brightness);
+
+    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL create waveform images kernel arguments");
+
+    cl::NDRange ndrGlobalCreateWF(c_WaveformSize.width, c_WaveformSize.height);
+    cl::NDRange ndrLocalCreateWF(1, c_WaveformSize.height);
+
+    /// UPLOAD SOURCE DATA
+
+    {
+        res = m_commandQueue.enqueueWriteBuffer(
+            m_bufSource, CL_FALSE, 0, m_sourceSizeBytes, sourceData);
+
+        CHECK_CL_ERROR_RET(res, "Failed to write source data to OpenCL buffer");
     }
+
+    /// RESET ACC BUFFERS
+
+    {
+        res = m_commandQueue.enqueueFillBuffer(m_bufAccRGB, 0, 0, c_WaveformSize.Area() * sizeof(cl_uint) * 3);
+        CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for RGB accumulation");
+        res = m_commandQueue.enqueueFillBuffer(m_bufAccYUV, 0, 0, c_WaveformSize.Area() * sizeof(cl_uint) * 3);
+        CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for YUV accumulation");
+        res = m_commandQueue.enqueueFillBuffer(m_bufAcc2D_UV_RGBA, 0, 0, c_ScopeSize.Area() * sizeof(cl_uint) * 4);
+        CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for UV scope accumulation");
+        res = m_commandQueue.enqueueFillBuffer(m_bufAcc2D_XYZ_RGBA, 0, 0, c_ScopeSize.Area() * sizeof(cl_uint) * 4);
+        CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for XYZ scope accumulation");
+        res = m_commandQueue.enqueueFillBuffer(m_bufAcc2D_DIA_RGBA, 0, 0, c_ScopeSize.Area() * sizeof(cl_uint) * 4);
+        CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for DIA scope accumulation");
+    }
+
+    /// EXECUTE KERNELS
 
     res = m_commandQueue.enqueueAcquireGLObjects(&m_glObjects);
 
-    if (res != CL_SUCCESS) [[unlikely]] {
-        std::println("Failed to acquire OpenCL GL objects: {}", res);
-        return;
-    }
+    CHECK_CL_ERROR_RET(res, "Failed to acquire OpenCL GL objects");
 
     res = m_commandQueue.enqueueNDRangeKernel(
         convert_kernel,
@@ -533,23 +247,30 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
         ndrGlobalConvert,
         cl::NullRange);
 
-    if (res != CL_SUCCESS) [[unlikely]] {
-        std::println("Failed to enqueue OpenCL kernel: {}", res);
-        return;
-    }
+    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL convert kernel");
+
+    res = m_commandQueue.enqueueNDRangeKernel(
+        m_kernels.accumulateWaveforms,
+        cl::NullRange,
+        ndrGlobalAccWF,
+        ndrLocalAccWF);
+
+    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate waveforms kernel");
+
+    res = m_commandQueue.enqueueNDRangeKernel(
+        m_kernels.createWaveformImages,
+        cl::NullRange,
+        ndrGlobalCreateWF,
+        ndrLocalCreateWF);
+
+    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL create waveform images kernel");
 
     res = m_commandQueue.enqueueReleaseGLObjects(&m_glObjects);
 
-    if (res != CL_SUCCESS) [[unlikely]] {
-        std::println("Failed to release OpenCL GL objects: {}", res);
-        return;
-    }
+    CHECK_CL_ERROR_RET(res, "Failed to release OpenCL GL objects");
 
     res = m_commandQueue.finish();
 
-    if (res != CL_SUCCESS) [[unlikely]] {
-        std::println("Failed to finish OpenCL command queue: {}", res);
-        return;
-    }
+    CHECK_CL_ERROR_RET(res, "Failed to finish OpenCL command queue");
 }
 } // namespace scpp

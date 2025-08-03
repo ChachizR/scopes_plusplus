@@ -2,7 +2,7 @@
 
 #include "pch.hpp"
 #include "ndi_source.hpp"
-#include "error_codes.hpp"
+#include "utils.hpp"
 
 namespace scpp {
 
