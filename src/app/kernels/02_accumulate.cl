@@ -1,9 +1,4 @@
-#define WF_WIDTH 580
-#define WF_HEIGHT 256
-#define SC_WIDTH 256
-#define SC_HEIGHT 256
-
-#define WAVEFORM_BINS 256
+#include "common.cl"
 
 typedef struct __attribute__((packed)) cl_rect_2D {
     int  x;

@@ -2,6 +2,7 @@ build
 out
 .vs
 .vscode
+.VSCodeCounter
 ext/imgui/imgui
 ext/glfw/glfw
 

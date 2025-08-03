@@ -116,20 +116,121 @@ void Application::ShutdownGLFW() {
     glfwTerminate();
 }
 
-void Application::RenderApp() {
-    UI_Main();
+void Application::Run() {
+
+    std::unique_ptr<scpp::VideoSource> source = nullptr;
+
+    while (!glfwWindowShouldClose(m_window)) {
+
+        glfwPollEvents();
+        if (glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) != 0) {
+            ImGui_ImplGlfw_Sleep(10);
+            continue;
+        }
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        if (!source) {
+            const auto sources = m_ndiSourceProvider->GetSources();
+
+            if (!sources.empty()) {
+
+                source = std::make_unique<scpp::NDISource>(*m_openclDeviceProvider, sources[0]);
+
+                if (source->Start() != scpp::ErrorCode::None) {
+                    std::println("Failed to start NDI source: {}", source->GetName());
+                    source.reset();
+                }
+            }
+        }
+
+        if (false)
+            ImGui::ShowDemoWindow();
+
+        UI_Main(source.get());
+
+        ImGui::ShowMetricsWindow();
+
+        // render stuff
+
+        ImGui::Render();
+        int display_w, display_h;
+        glfwGetFramebufferSize(m_window, &display_w, &display_h);
+        glViewport(0, 0, display_w, display_h);
+        glClearColor(m_clearColor.x * m_clearColor.w, m_clearColor.y * m_clearColor.w, m_clearColor.z * m_clearColor.w, m_clearColor.w);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+            GLFWwindow* backup_current_context = glfwGetCurrentContext();
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+            glfwMakeContextCurrent(backup_current_context);
+        }
+
+        glfwSwapBuffers(m_window);
+    }
 }
 
-void Application::UI_Main() const noexcept {
+void Application::UI_Main(VideoSource* source) const noexcept {
     UI_MainMenuBar();
 
     ImGui::DockSpaceOverViewport(
         0, ImGui::GetMainViewport(),
         ImGuiDockNodeFlags_PassthruCentralNode);
 
-    UI_Settings();
+    // UI_Settings();
     UI_NDISources();
+
+    if (source) {
+        auto& sourceRenderer = source->GetRenderer();
+        if (sourceRenderer.needsResizeFlag_mainThread) {
+            sourceRenderer.ResizeGLTextures();
+        }
+
+        auto sourceTextures = sourceRenderer.GetTargetTextures();
+
+        auto& sourcePreview = sourceTextures->sourcePreview;
+
+        ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGuiImageRender(sourcePreview,ScaleBehavior::ScaleToFit);
+        ImGui::End();
+
+        auto& wfLuma = sourceTextures->wfLuma;
+
+        ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGuiImageRender(wfLuma, ScaleBehavior::ScaleToFit,FlipBehavior::FlipVertically);
+        ImGui::End();
+
+        auto& wfRgb = sourceTextures->wfRGB;
+
+        ImGui::Begin(wfRgb.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGuiImageRender(wfRgb, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        ImGui::End();
+
+        auto& wfRgbParade = sourceTextures->wfRGBParade;
+
+        ImGui::Begin(wfRgbParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGuiImageRender(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        ImGui::End();
+
+        auto& wfRgbBlacks = sourceTextures->wfRGBBlacks;
+
+        ImGui::Begin(wfRgbBlacks.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGuiImageRender(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        ImGui::End();
+
+        auto& wfYuvParade = sourceTextures->wfYUVParade;
+
+        ImGui::Begin(wfYuvParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGuiImageRender(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        ImGui::End();
+
+    }
 }
+
 void Application::UI_MainMenuBar() const noexcept {
     ImGui::BeginMainMenuBar();
 
@@ -165,85 +266,6 @@ void Application::UI_NDISources() const noexcept {
         ImGui::EndTable();
     }
     ImGui::End();
-}
-
-void Application::Run() {
-
-    std::unique_ptr<scpp::VideoSource> source = nullptr;
-
-    while (!glfwWindowShouldClose(m_window)) {
-
-        glfwPollEvents();
-        if (glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) != 0) {
-            ImGui_ImplGlfw_Sleep(10);
-            continue;
-        }
-
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        if (!source) {
-            const auto sources = m_ndiSourceProvider->GetSources();
-
-            if (!sources.empty()) {
-
-                source = std::make_unique<scpp::NDISource>(*m_openclDeviceProvider, sources[0]);
-
-                if (source->Start() != scpp::ErrorCode::None) {
-                    std::println("Failed to start NDI source: {}", source->GetName());
-                    source.reset();
-                }
-            }
-        }
-
-        if (false)
-            ImGui::ShowDemoWindow();
-
-        RenderApp();
-
-        if (source) {
-            auto& sourceRenderer = source->GetRenderer();
-            if (sourceRenderer.needsResizeFlag_mainThread) {
-                sourceRenderer.ResizeGLTextures();
-            }
-
-            auto sourceTextures = sourceRenderer.GetTargetTextures();
-
-            auto& sourcePreview = sourceTextures->sourcePreview;
-
-            ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-            ImGuiImageRender(sourcePreview);
-            ImGui::End();
-
-            auto& wfLuma = sourceTextures->wfLuma;
-
-            ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-            ImGuiImageRender(wfLuma);
-            ImGui::End();
-        }
-
-        ImGui::ShowMetricsWindow();
-
-        // render stuff
-
-        ImGui::Render();
-        int display_w, display_h;
-        glfwGetFramebufferSize(m_window, &display_w, &display_h);
-        glViewport(0, 0, display_w, display_h);
-        glClearColor(m_clearColor.x * m_clearColor.w, m_clearColor.y * m_clearColor.w, m_clearColor.z * m_clearColor.w, m_clearColor.w);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-        if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-            GLFWwindow* backup_current_context = glfwGetCurrentContext();
-            ImGui::UpdatePlatformWindows();
-            ImGui::RenderPlatformWindowsDefault();
-            glfwMakeContextCurrent(backup_current_context);
-        }
-
-        glfwSwapBuffers(m_window);
-    }
 }
 
 } // namespace scpp

@@ -46,7 +46,6 @@ private:
 
     void ShutdownGLFW();
 
-    void RenderApp();
 
     static inline void GLFWErrorCallback(int error, const char* description) {
         std::println("GLFW Error {}: {}", error, description);
@@ -54,7 +53,7 @@ private:
 
     // UI
 
-    void UI_Main() const noexcept;
+    void UI_Main(VideoSource* source) const noexcept;
     void UI_MainMenuBar() const noexcept;
     void UI_Settings() const noexcept;
     void UI_NDISources() const noexcept;

@@ -7,22 +7,57 @@
 
 namespace scpp {
 
+enum class ScaleBehavior {
+    DoNotScale,
+    OnlyScaleDown,
+    ScaleToFit,
+};
+
+enum class FlipBehavior {
+    DoNotFlip,
+    FlipHorizontally,
+    FlipVertically,
+    FlipBoth,
+};
+
 static inline void ImGuiImageRender(
-    const CLGLTextureRGBA& texture) {
+    const CLGLTextureRGBA& texture,
+    ScaleBehavior          scaleBehavior = ScaleBehavior::OnlyScaleDown,
+    FlipBehavior           flipBehavior  = FlipBehavior::DoNotFlip) {
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
     float imgW   = static_cast<float>(texture.size.width);
     float imgH   = static_cast<float>(texture.size.height);
     float scaleX = avail.x / imgW;
     float scaleY = avail.y / imgH;
-    float scale  = (std::min)((std::min)(scaleX, scaleY), 1.0f);
+    float scale  = 1.f;
+
+    switch (scaleBehavior) {
+    case ScaleBehavior::DoNotScale:
+        break;
+    case ScaleBehavior::OnlyScaleDown:
+        scale = (std::min)((std::min)(scaleX, scaleY), 1.f);
+        break;
+    case ScaleBehavior::ScaleToFit:
+        scale = (std::min)(scaleX, scaleY);
+        break;
+    }
+
+    const auto [uv0, uv1] = [&]() -> std::pair<ImVec2, ImVec2> {
+        if (flipBehavior == FlipBehavior::DoNotFlip) {
+            return {ImVec2(0, 0), ImVec2(1, 1)};
+        } else if (flipBehavior == FlipBehavior::FlipHorizontally) {
+            return {ImVec2(1, 0), ImVec2(0, 1)};
+        } else if (flipBehavior == FlipBehavior::FlipVertically) {
+            return {ImVec2(0, 1), ImVec2(1, 0)};
+        } else { // FlipBoth
+            return {ImVec2(1, 1), ImVec2(0, 0)};
+        }
+    }();
 
     const auto imTextureID = static_cast<ImTextureID>(texture.glTextureID);
 
-    ImGui::Image(
-        imTextureID,
-        ImVec2(imgW * scale, imgH * scale),
-        ImVec2(0, 0), ImVec2(1, 1));
+    ImGui::ImageWithBg(imTextureID, ImVec2(imgW * scale, imgH * scale), uv0, uv1,ImVec4(0.f,0.f,0.f,1.f));
 }
 
 struct TargetTextures {

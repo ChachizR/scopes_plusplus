@@ -102,6 +102,8 @@ private:
     static constexpr auto c_KernelCreateImagesSourcePath = "./kernels/03_create_images.cl"sv;
 
     static constexpr auto c_KernelName_createWaveformImages = "createWaveformImages"sv;
+
+    static constexpr auto c_KernelCommonSourcePath = "./kernels/common.cl"sv;
 };
 
 } // namespace scpp
