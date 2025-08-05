@@ -57,7 +57,7 @@ static inline void ImGuiImageRender(
 
     const auto imTextureID = static_cast<ImTextureID>(texture.glTextureID);
 
-    ImGui::ImageWithBg(imTextureID, ImVec2(imgW * scale, imgH * scale), uv0, uv1,ImVec4(0.f,0.f,0.f,1.f));
+    ImGui::ImageWithBg(imTextureID, ImVec2(imgW * scale, imgH * scale), uv0, uv1, ImVec4(0.f, 0.f, 0.f, 1.f));
 }
 
 struct TargetTextures {
@@ -68,6 +68,9 @@ struct TargetTextures {
     CLGLTextureRGBA wfRGBParade;
     CLGLTextureRGBA wfRGBBlacks;
     CLGLTextureRGBA wfYUVParade;
+    CLGLTextureRGBA scUV;
+    CLGLTextureRGBA scXYZ;
+    CLGLTextureRGBA scDia;
 
     TargetTextures(CLGLTextureRGBA&& sourcePreview,
                    CLGLTextureRGBA&& falseColor,
@@ -75,7 +78,10 @@ struct TargetTextures {
                    CLGLTextureRGBA&& wfRGB,
                    CLGLTextureRGBA&& wfRGBParade,
                    CLGLTextureRGBA&& wfRGBBlacks,
-                   CLGLTextureRGBA&& wfYUVParade)
+                   CLGLTextureRGBA&& wfYUVParade,
+                   CLGLTextureRGBA&& scUV,
+                   CLGLTextureRGBA&& scXYZ,
+                   CLGLTextureRGBA&& scDia)
 
         : sourcePreview{std::move(sourcePreview)}
         , falseColor{std::move(falseColor)}
@@ -83,7 +89,10 @@ struct TargetTextures {
         , wfRGB{std::move(wfRGB)}
         , wfRGBParade{std::move(wfRGBParade)}
         , wfRGBBlacks{std::move(wfRGBBlacks)}
-        , wfYUVParade{std::move(wfYUVParade)} {}
+        , wfYUVParade{std::move(wfYUVParade)}
+        , scUV{std::move(scUV)}
+        , scXYZ{std::move(scXYZ)}
+        , scDia{std::move(scDia)} {}
 };
 
 enum class SourceFormat {
@@ -215,7 +224,11 @@ private:
             m_targetTextures->wfRGB.clImageGL,
             m_targetTextures->wfRGBParade.clImageGL,
             m_targetTextures->wfRGBBlacks.clImageGL,
-            m_targetTextures->wfYUVParade.clImageGL};
+            m_targetTextures->wfYUVParade.clImageGL,
+            m_targetTextures->scUV.clImageGL,
+            m_targetTextures->scXYZ.clImageGL,
+            m_targetTextures->scDia.clImageGL
+        };
     }
 
     void ResizeBuffers();

@@ -33,7 +33,8 @@ OpenCLRenderer::OpenCLRenderer(const OpenCLDeviceProvider& deviceProviderRef)
 
     cl_int res = CL_SUCCESS;
 
-    m_commandQueue = cl::CommandQueue(m_context, m_device, cl::QueueProperties(), &res);
+    m_commandQueue = cl::CommandQueue(m_context, m_device, cl::QueueProperties::None, &res);
+    // m_commandQueue = cl::CommandQueue(m_context, m_device, cl::QueueProperties::Profiling, &res);
 
     if (res != CL_SUCCESS) {
         std::println("Failed to create OpenCL command queue: {}", res);
@@ -47,7 +48,10 @@ OpenCLRenderer::OpenCLRenderer(const OpenCLDeviceProvider& deviceProviderRef)
         CLGLTextureRGBA("RGB Waveform"sv, c_WaveformSize, m_context),
         CLGLTextureRGBA("RGB Parade"sv, c_WaveformSize, m_context),
         CLGLTextureRGBA("RGB Blacklevel"sv, c_WaveformSize, m_context),
-        CLGLTextureRGBA("YUV Parade"sv, c_WaveformSize, m_context));
+        CLGLTextureRGBA("YUV Parade"sv, c_WaveformSize, m_context),
+        CLGLTextureRGBA("UV Vectorscope"sv, c_ScopeSize, m_context),
+        CLGLTextureRGBA("CIE 1931 Chromaticity"sv, c_ScopeSize, m_context),
+        CLGLTextureRGBA("Double Diamond"sv, c_ScopeSize, m_context));
 
     UpdateGLObjects();
 
@@ -211,6 +215,73 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
     cl::NDRange ndrGlobalCreateWF(c_WaveformSize.width, c_WaveformSize.height);
     cl::NDRange ndrLocalCreateWF(1, c_WaveformSize.height);
 
+    /// ACCUMULATE SCOPE KERNELS
+
+    res += m_kernels.accumulateUVScope.setArg<cl::Buffer>(0, m_bufIntermRGBA);
+    res += m_kernels.accumulateUVScope.setArg<cl::Buffer>(1, m_bufIntermYUV);
+    res += m_kernels.accumulateUVScope.setArg<cl::Buffer>(2, m_bufAcc2D_UV_RGBA);
+    res += m_kernels.accumulateUVScope.setArg<cl_uint>(3, m_sourceDims.width);
+    res += m_kernels.accumulateUVScope.setArg<cl_uint>(4, m_sourceDims.height);
+    res += m_kernels.accumulateUVScope.setArg<cl_uchar>(5, 0);
+    res += m_kernels.accumulateUVScope.setArg<CLRect2D>(6, CLRect2D{0, 0, 0, 0});
+
+    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate UV scope kernel arguments");
+
+    res += m_kernels.accumulateUVScopeV2.setArg<cl::Buffer>(0, m_bufIntermYUV);
+    res += m_kernels.accumulateUVScopeV2.setArg<cl::Buffer>(1, m_bufAcc2D_UV_RGBA);
+    res += m_kernels.accumulateUVScopeV2.setArg<cl_uint>(2, m_sourceDims.width);
+    res += m_kernels.accumulateUVScopeV2.setArg<cl_uint>(3, m_sourceDims.height);
+    res += m_kernels.accumulateUVScopeV2.setArg<cl_uchar>(4, 0);
+    res += m_kernels.accumulateUVScopeV2.setArg<CLRect2D>(5, CLRect2D{0, 0, 0, 0});
+
+    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate UV scope kernel arguments");
+
+    size_t glob_height = ((sourceDims.height + localHistKernelY - 1) / localHistKernelY) * localHistKernelY;
+    size_t glob_width  = ((sourceDims.width + c_ScopeSize.width - 1) / c_ScopeSize.width) * c_ScopeSize.width;
+
+    cl::NDRange ndrGlobalAccScopeUV2(glob_width, glob_height, 16);
+    cl::NDRange ndrLocalAccScopeUV2(256, 1);
+
+    res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(0, m_bufIntermRGBA);
+    res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(1, m_bufAcc2D_XYZ_RGBA);
+    res += m_kernels.accumulateXYZScope.setArg<cl_uint>(2, m_sourceDims.width);
+    res += m_kernels.accumulateXYZScope.setArg<cl_uint>(3, m_sourceDims.height);
+    res += m_kernels.accumulateXYZScope.setArg<cl_uchar>(4, 0);
+    res += m_kernels.accumulateXYZScope.setArg<CLRect2D>(5, CLRect2D{0, 0, 0, 0});
+    res += m_kernels.accumulateXYZScope.setArg<cl_int>(6, static_cast<cl_int>(YUVColorSpace::BT709));
+
+    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate XYZ scope kernel arguments");
+
+    res += m_kernels.accumulateDiaScope.setArg<cl::Buffer>(0, m_bufIntermRGBA);
+    res += m_kernels.accumulateDiaScope.setArg<cl::Buffer>(1, m_bufAcc2D_DIA_RGBA);
+    res += m_kernels.accumulateDiaScope.setArg<cl_uint>(2, m_sourceDims.width);
+    res += m_kernels.accumulateDiaScope.setArg<cl_uint>(3, m_sourceDims.height);
+    res += m_kernels.accumulateDiaScope.setArg<cl_uchar>(4, 0);
+    res += m_kernels.accumulateDiaScope.setArg<CLRect2D>(5, CLRect2D{0, 0, 0, 0});
+
+    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate DIA scope kernel arguments");
+
+    cl::NDRange ndrGlobalAccScope(m_sourceDims.width, m_sourceDims.height);
+
+    /// CREATE SCOPE IMAGES
+
+    /*sampleCount = std::ceil(static_cast<float>(sourceDims.width) / static_cast<float>(c_ScopeSize.width));
+
+    brightness = (1.f + 8.f * (1080.f / (float)sourceDims.height)) / sampleCount;*/
+
+    res += m_kernels.createScopeImages.setArg<cl::Buffer>(0, m_bufAcc2D_UV_RGBA);
+    res += m_kernels.createScopeImages.setArg<cl::Buffer>(1, m_bufAcc2D_XYZ_RGBA);
+    res += m_kernels.createScopeImages.setArg<cl::Buffer>(2, m_bufAcc2D_DIA_RGBA);
+    res += m_kernels.createScopeImages.setArg<cl::ImageGL>(3, m_targetTextures->scUV.clImageGL);
+    res += m_kernels.createScopeImages.setArg<cl::ImageGL>(4, m_targetTextures->scXYZ.clImageGL);
+    res += m_kernels.createScopeImages.setArg<cl::ImageGL>(5, m_targetTextures->scDia.clImageGL);
+    res += m_kernels.createScopeImages.setArg<cl_uint>(6, m_sourceDims.width);
+    res += m_kernels.createScopeImages.setArg<cl_float>(7, brightness);
+
+    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL create scope images kernel arguments");
+
+    cl::NDRange ndrGlobalCreateScope(c_ScopeSize.width, c_ScopeSize.height);
+
     /// UPLOAD SOURCE DATA
 
     {
@@ -264,6 +335,46 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
         ndrLocalCreateWF);
 
     CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL create waveform images kernel");
+
+    res = m_commandQueue.enqueueNDRangeKernel(
+        m_kernels.accumulateUVScope,
+        cl::NullRange,
+        ndrGlobalAccScope,
+        cl::NullRange);
+
+    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate UV scope kernel");
+
+    res = m_commandQueue.enqueueNDRangeKernel(
+        m_kernels.accumulateUVScopeV2,
+        cl::NullRange,
+        ndrGlobalAccScopeUV2, 
+        ndrLocalAccScopeUV2);
+
+    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate UV scope V2 kernel");
+
+    res = m_commandQueue.enqueueNDRangeKernel(
+        m_kernels.accumulateXYZScope,
+        cl::NullRange,
+        ndrGlobalAccScope,
+        cl::NullRange);
+
+    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate XYZ scope kernel");
+
+    res = m_commandQueue.enqueueNDRangeKernel(
+        m_kernels.accumulateDiaScope,
+        cl::NullRange,
+        ndrGlobalAccScope,
+        cl::NullRange);
+
+    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate DIA scope kernel");
+
+    res = m_commandQueue.enqueueNDRangeKernel(
+        m_kernels.createScopeImages,
+        cl::NullRange,
+        ndrGlobalCreateScope,
+        cl::NullRange);
+
+    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL create scope images kernel");
 
     res = m_commandQueue.enqueueReleaseGLObjects(&m_glObjects);
 

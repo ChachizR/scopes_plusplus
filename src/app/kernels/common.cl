@@ -3,7 +3,7 @@ inline uchar clamp8(int value) {
                                        : value;
 }
 
-uchar preMultiply(uchar a, uchar b) {
+inline uchar preMultiply(uchar a, uchar b) {
     return (uchar)rint(((float)a * (float)b) / 255.f);
 }
 
@@ -59,19 +59,19 @@ void rgbToYuv(uchar r, uchar g, uchar b, uchar* y, uchar* u, uchar* v,
 
 #define WAVEFORM_BINS 256
 
-void coordsFromIndex(uint index, uint width, uint* x, uint* y) {
+inline void coordsFromIndex(uint index, uint width, uint* x, uint* y) {
     *x = index % width;
     *y = index / width;
 }
 
-int2 coordsVecFromIndex(uint index, uint width) {
+inline int2 coordsVecFromIndex(uint index, uint width) {
     return (int2)(index % width, index / width);
 }
 
-uint indexFromCoords(uint x, uint y, uint width) {
+inline uint indexFromCoords(uint x, uint y, uint width) {
     return y * width + x;
 }
 
-uint indexFromCoordsVec(int2 coords, uint width) {
+inline uint indexFromCoordsVec(int2 coords, uint width) {
     return coords.y * width + coords.x;
 }

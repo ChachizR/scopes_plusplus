@@ -228,6 +228,21 @@ void Application::UI_Main(VideoSource* source) const noexcept {
         ImGuiImageRender(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
         ImGui::End();
 
+        auto& scUV = sourceTextures->scUV;
+        ImGui::Begin(scUV.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGuiImageRender(scUV, ScaleBehavior::ScaleToFit);
+        ImGui::End();
+
+        auto& scXYZ = sourceTextures->scXYZ;
+        ImGui::Begin(scXYZ.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGuiImageRender(scXYZ, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        ImGui::End();
+
+        auto& scDia = sourceTextures->scDia;
+        ImGui::Begin(scDia.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGuiImageRender(scDia, ScaleBehavior::ScaleToFit);
+        ImGui::End();
+
     }
 }
 

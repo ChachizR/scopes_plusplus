@@ -11,4 +11,5 @@ ext/ndi/**
 
 debugging/
 start_debugging.bat
-
+profile.bat
+profile

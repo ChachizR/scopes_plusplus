@@ -6,7 +6,7 @@
 namespace scpp {
 struct RenderPipelineKernels {
 
-    bool       initialized{false};
+    bool initialized{false};
 
     cl::Kernel convertSource_RGBA_8888;
     cl::Kernel convertSource_RGBX_8888;
@@ -21,8 +21,13 @@ struct RenderPipelineKernels {
     cl::Kernel convertSource_NV12;
 
     cl::Kernel accumulateWaveforms;
+    cl::Kernel accumulateUVScope;
+    cl::Kernel accumulateUVScopeV2;
+    cl::Kernel accumulateXYZScope;
+    cl::Kernel accumulateDiaScope;
 
     cl::Kernel createWaveformImages;
+    cl::Kernel createScopeImages;
 };
 
 class OpenCLDeviceProvider {
@@ -98,10 +103,15 @@ private:
     static constexpr auto c_KernelAccumulateSourcePath = "./kernels/02_accumulate.cl"sv;
 
     static constexpr auto c_KernelName_accumulateWaveforms = "accumulateWaveforms"sv;
+    static constexpr auto c_KernelName_accumulateUVScope   = "accumulateUVScope"sv;
+    static constexpr auto c_KernelName_accumulateUVScopeV2   = "accumulateUVScopeV2"sv;
+    static constexpr auto c_KernelName_accumulateXYZScope  = "accumulateXYZScope"sv;
+    static constexpr auto c_KernelName_accumulateDiaScope  = "accumulateDiaScope"sv;
 
     static constexpr auto c_KernelCreateImagesSourcePath = "./kernels/03_create_images.cl"sv;
 
     static constexpr auto c_KernelName_createWaveformImages = "createWaveformImages"sv;
+    static constexpr auto c_KernelName_createScopeImages    = "createScopeImages"sv;
 
     static constexpr auto c_KernelCommonSourcePath = "./kernels/common.cl"sv;
 };

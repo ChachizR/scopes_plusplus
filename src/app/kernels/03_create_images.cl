@@ -137,3 +137,70 @@ __kernel void createWaveformImages(__global const uint* in_hist_rgb,
         write_imagef(out_wf_yuv_parade, xy, (float4)(r, g, b, a));
     }
 }
+
+__kernel void createScopeImages(
+    __global const uint* in_hist2d_uv_rgba,
+    __global const uint* in_hist2d_xyz_rgba,
+    __global const uint* in_hist2d_dia_rgba,
+    write_only image2d_t out_sc_uv,
+    write_only image2d_t out_sc_xyz,
+    write_only image2d_t out_sc_dia,
+    uint src_width, float brightness) {
+
+    size_t x = get_global_id(0);
+    size_t y = get_global_id(1);
+
+    if (x >= SC_WIDTH || y >= SC_HEIGHT)
+        return;
+
+    size_t gid = y * SC_WIDTH + x;
+
+    size_t rgbaPB = gid * 4;
+
+    int2 xy = (int2)(x, y);
+
+    float  R, G, B, A;
+    float4 color;
+
+    // ===== UV SCOPE =====
+
+    {
+        A = (float)in_hist2d_uv_rgba[rgbaPB + 3] / 255.f * brightness;
+        // R = (float)in_hist2d_uv_rgba[rgbaPB + 0] / 255.f * A;
+        // G = (float)in_hist2d_uv_rgba[rgbaPB + 1] / 255.f * A;
+        // B = (float)in_hist2d_uv_rgba[rgbaPB + 2] / 255.f * A;
+        uchar r, g, b;
+        yuvToRgb(128, x, SC_HEIGHT - y, &r, &g, &b, CS_BT709);
+
+        R = (float)r / 255.f;
+        G = (float)g / 255.f;
+        B = (float)b / 255.f;
+
+        color = (float4)(R, G, B, A);
+        write_imagef(out_sc_uv, xy, color);
+    }
+
+    // ===== XYZ SCOPE =====
+
+    {
+        A = (float)in_hist2d_xyz_rgba[rgbaPB + 3] / 255.f * brightness;
+        // R = (float)in_hist2d_xyz_rgba[rgbaPB + 0] / 255.f * A;
+        // G = (float)in_hist2d_xyz_rgba[rgbaPB + 1] / 255.f * A;
+        // B = (float)in_hist2d_xyz_rgba[rgbaPB + 2] / 255.f * A;
+
+        color = (float4)(A, A, A, A);
+        write_imagef(out_sc_xyz, xy, color);
+    }
+
+    // ===== DIAMOND SCOPE =====
+
+    {
+        A = (float)in_hist2d_dia_rgba[rgbaPB + 3] / 255.f * brightness;
+        // R = (float)in_hist2d_dia_rgba[rgbaPB + 0] / 255.f * A;
+        // G = (float)in_hist2d_dia_rgba[rgbaPB + 1] / 255.f * A;
+        // B = (float)in_hist2d_dia_rgba[rgbaPB + 2] / 255.f * A;
+
+        color = (float4)(A, A, A, A);
+        write_imagef(out_sc_dia, xy, color);
+    }
+}
