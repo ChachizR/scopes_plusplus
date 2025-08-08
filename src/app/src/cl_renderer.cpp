@@ -92,6 +92,7 @@ void OpenCLRenderer::ResizeBuffers() {
     m_bufSource     = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_WRITE_ONLY, m_sourceSizeBytes);
     m_bufIntermRGBA = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, m_rgbaSizeBytes);
     m_bufIntermYUV  = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, m_yuvSizeBytes);
+    // m_bufIntermXYZ  = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, m_yuvSizeBytes);
 
     std::println("Resized OpenCL buffers: {}x{} "
                  "Source: {} bytes, "
@@ -227,21 +228,6 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
 
     CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate UV scope kernel arguments");
 
-    res += m_kernels.accumulateUVScopeV2.setArg<cl::Buffer>(0, m_bufIntermYUV);
-    res += m_kernels.accumulateUVScopeV2.setArg<cl::Buffer>(1, m_bufAcc2D_UV_RGBA);
-    res += m_kernels.accumulateUVScopeV2.setArg<cl_uint>(2, m_sourceDims.width);
-    res += m_kernels.accumulateUVScopeV2.setArg<cl_uint>(3, m_sourceDims.height);
-    res += m_kernels.accumulateUVScopeV2.setArg<cl_uchar>(4, 0);
-    res += m_kernels.accumulateUVScopeV2.setArg<CLRect2D>(5, CLRect2D{0, 0, 0, 0});
-
-    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate UV scope kernel arguments");
-
-    size_t glob_height = ((sourceDims.height + localHistKernelY - 1) / localHistKernelY) * localHistKernelY;
-    size_t glob_width  = ((sourceDims.width + c_ScopeSize.width - 1) / c_ScopeSize.width) * c_ScopeSize.width;
-
-    cl::NDRange ndrGlobalAccScopeUV2(glob_width, glob_height, 16);
-    cl::NDRange ndrLocalAccScopeUV2(256, 1);
-
     res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(0, m_bufIntermRGBA);
     res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(1, m_bufAcc2D_XYZ_RGBA);
     res += m_kernels.accumulateXYZScope.setArg<cl_uint>(2, m_sourceDims.width);
@@ -343,14 +329,6 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
         cl::NullRange);
 
     CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate UV scope kernel");
-
-    res = m_commandQueue.enqueueNDRangeKernel(
-        m_kernels.accumulateUVScopeV2,
-        cl::NullRange,
-        ndrGlobalAccScopeUV2, 
-        ndrLocalAccScopeUV2);
-
-    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate UV scope V2 kernel");
 
     res = m_commandQueue.enqueueNDRangeKernel(
         m_kernels.accumulateXYZScope,

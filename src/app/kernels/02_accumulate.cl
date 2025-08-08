@@ -87,26 +87,6 @@ __kernel void accumulateWaveforms(
     }
 }
 
-void rgbToXYZ(uchar r, uchar g, uchar b, int colorspace, float* X, float* Y, float* Z) {
-    float r_f = r / 255.0f;
-    float g_f = g / 255.0f;
-    float b_f = b / 255.0f;
-
-    if (colorspace == CS_BT601) {
-        *X = r_f * 0.14165220f + g_f * 0.11236989f + b_f * 0.05867791f;
-        *Y = r_f * 0.07303942f + g_f * 0.23248942f + b_f * 0.02347116f;
-        *Z = r_f * 0.00663995f + g_f * 0.04262306f + b_f * 0.30903699f;
-    } else if (colorspace == CS_BT709) {
-        *X = r_f * 0.13567657f + g_f * 0.11764525f + b_f * 0.05937818f;
-        *Y = r_f * 0.06995823f + g_f * 0.23529050f + b_f * 0.02375127f;
-        *Z = r_f * 0.00635984f + g_f * 0.03921508f + b_f * 0.31272508f;
-    } else if (colorspace == CS_BT2020) {
-        *X = r_f * 0.20955920f + g_f * 0.04757896f + b_f * 0.05556184f;
-        *Y = r_f * 0.08642837f + g_f * 0.22306137f + b_f * 0.01951026f;
-        *Z = r_f * 0.00000000f + g_f * 0.00923592f + b_f * 0.34906408f;
-    }
-}
-
 __kernel void accumulateUVScope(
     __global const uchar* in_rgba,
     __global const uchar* in_yuv,
@@ -226,78 +206,4 @@ __kernel void accumulateDiaScope(
     // atomic_max(&out_hist2d_dia_rgba[sc_id_gr * 4 + 0], R);
     // atomic_max(&out_hist2d_dia_rgba[sc_id_gr * 4 + 1], G);
     atomic_inc(&out_hist2d_dia_rgba[sc_id_gr * 4 + 3]);
-}
-
-#define BINS_X 256                  // U bins
-#define TILE_V 16                   // V rows per pass
-#define BINS_TILE (BINS_X * TILE_V) // 4096
-
-// instead of accumulating the whole UV scope at once using atomics on global memory,
-// we accumulate stripes of the UV scope in local memory and then write them to global memory
-// this is done to reduce the contention on the global memory and improve performance
-__kernel void accumulateUVScopeV2(
-    __global const uchar* in_yuv,
-    __global uint*        out_hist2d_uv_rgba,
-    uint                  src_w,
-    uint                  src_h,
-    uchar                 mask_on,
-    cl_rect_2D            mask_rect) {
-
-    const uint x    = get_global_id(0);
-    const uint y    = get_global_id(1);
-    const uint pass = get_global_id(2); // 0 … 15
-
-    const uint lid = get_local_id(0);
-    const uint lsz = get_local_size(0);
-
-    __local uint hist[BINS_TILE];
-
-    /* 1. Clear local histogram ------------------------------------------ */
-    for (uint i = lid; i < BINS_TILE; i += lsz)
-        hist[i] = 0u;
-
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    /* 2. Accumulate if this pixel falls into the current V stripe -------- */
-    uchar active = 0;
-    uchar U = 0, V = 0;
-
-    if (x < src_w && y < src_h) {
-
-        if (!mask_on || isWithin(mask_rect, x, y)) {
-
-            const uint p = (y * src_w + x) * 3u;
-            U            = in_yuv[p + 1];
-            V            = in_yuv[p + 2];
-
-            const uchar stripe_min = pass * TILE_V;
-
-            if (V >= stripe_min && V < stripe_min + TILE_V) {
-                const uint idx = (V - stripe_min) * BINS_X + U;
-                atomic_inc(&hist[idx]);
-                active = 1;
-            }
-        }
-    }
-
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    /* 3. Flush the tile to global memory -------------------------------- */
-    for (uint i = lid; i < BINS_TILE; i += lsz) {
-
-        uint count = hist[i];
-        if (count == 0)
-            continue; // skip zeros to save atomics
-
-        uint v_bin = i / BINS_X; // 0 … 15
-        uint u_bin = i % BINS_X; // 0 … 255
-
-        uint global_v = pass * TILE_V + v_bin; // 0 … 255
-
-        /* store “upside-down” so V=0 (blue) is at the top of the scope */
-        uint sc_row = 255u - global_v;
-
-        uint dst = (sc_row * BINS_X + u_bin) * 4u + 3u; // A-channel
-        atomic_add(&out_hist2d_uv_rgba[dst], count);
-    }
 }

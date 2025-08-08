@@ -52,6 +52,26 @@ void rgbToYuv(uchar r, uchar g, uchar b, uchar* y, uchar* u, uchar* v,
     }
 }
 
+void rgbToXYZ(uchar r, uchar g, uchar b, int colorspace, float* X, float* Y, float* Z) {
+    float r_f = r / 255.0f;
+    float g_f = g / 255.0f;
+    float b_f = b / 255.0f;
+
+    if (colorspace == CS_BT601) {
+        *X = r_f * 0.14165220f + g_f * 0.11236989f + b_f * 0.05867791f;
+        *Y = r_f * 0.07303942f + g_f * 0.23248942f + b_f * 0.02347116f;
+        *Z = r_f * 0.00663995f + g_f * 0.04262306f + b_f * 0.30903699f;
+    } else if (colorspace == CS_BT709) {
+        *X = r_f * 0.13567657f + g_f * 0.11764525f + b_f * 0.05937818f;
+        *Y = r_f * 0.06995823f + g_f * 0.23529050f + b_f * 0.02375127f;
+        *Z = r_f * 0.00635984f + g_f * 0.03921508f + b_f * 0.31272508f;
+    } else if (colorspace == CS_BT2020) {
+        *X = r_f * 0.20955920f + g_f * 0.04757896f + b_f * 0.05556184f;
+        *Y = r_f * 0.08642837f + g_f * 0.22306137f + b_f * 0.01951026f;
+        *Z = r_f * 0.00000000f + g_f * 0.00923592f + b_f * 0.34906408f;
+    }
+}
+
 #define WF_WIDTH 580
 #define WF_HEIGHT 256
 #define SC_WIDTH 256

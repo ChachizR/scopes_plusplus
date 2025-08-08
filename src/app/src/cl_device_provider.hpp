@@ -22,7 +22,6 @@ struct RenderPipelineKernels {
 
     cl::Kernel accumulateWaveforms;
     cl::Kernel accumulateUVScope;
-    cl::Kernel accumulateUVScopeV2;
     cl::Kernel accumulateXYZScope;
     cl::Kernel accumulateDiaScope;
 
@@ -104,7 +103,6 @@ private:
 
     static constexpr auto c_KernelName_accumulateWaveforms = "accumulateWaveforms"sv;
     static constexpr auto c_KernelName_accumulateUVScope   = "accumulateUVScope"sv;
-    static constexpr auto c_KernelName_accumulateUVScopeV2   = "accumulateUVScopeV2"sv;
     static constexpr auto c_KernelName_accumulateXYZScope  = "accumulateXYZScope"sv;
     static constexpr auto c_KernelName_accumulateDiaScope  = "accumulateDiaScope"sv;
 

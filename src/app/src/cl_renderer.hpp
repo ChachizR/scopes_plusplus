@@ -186,6 +186,7 @@ private:
     cl::Buffer m_bufSource;
     cl::Buffer m_bufIntermRGBA;
     cl::Buffer m_bufIntermYUV;
+    // cl::Buffer m_bufIntermXYZ;
 
     cl::Buffer m_bufAccRGB, m_bufAccYUV;
     cl::Buffer m_bufAcc2D_UV_RGBA, m_bufAcc2D_XYZ_RGBA, m_bufAcc2D_DIA_RGBA;
@@ -227,8 +228,7 @@ private:
             m_targetTextures->wfYUVParade.clImageGL,
             m_targetTextures->scUV.clImageGL,
             m_targetTextures->scXYZ.clImageGL,
-            m_targetTextures->scDia.clImageGL
-        };
+            m_targetTextures->scDia.clImageGL};
     }
 
     void ResizeBuffers();

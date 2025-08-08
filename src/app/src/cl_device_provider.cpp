@@ -320,11 +320,6 @@ auto OpenCLDeviceProvider::CreateKernels() const -> std::expected<RenderPipeline
 
     CHECK_KERNEL_ERROR(res, c_KernelName_accumulateUVScope);
 
-    kernels.accumulateUVScopeV2 =
-        cl::Kernel(accumulateProgram, c_KernelName_accumulateUVScopeV2.data(), &res);
-
-    CHECK_KERNEL_ERROR(res, c_KernelName_accumulateUVScopeV2);
-
     kernels.accumulateXYZScope =
         cl::Kernel(accumulateProgram, c_KernelName_accumulateXYZScope.data(), &res);
 
