@@ -289,6 +289,11 @@ auto OpenCLDeviceProvider::CreateKernels() const -> std::expected<RenderPipeline
 
     CHECK_KERNEL_ERROR(res, c_KernelName_convertSource_UYVY_422);
 
+    kernels.convertSource_UYVA_4224 =
+        cl::Kernel(convertProgram, c_KernelName_convertSource_UYVA_4224.data(), &res);
+
+    CHECK_KERNEL_ERROR(res, c_KernelName_convertSource_UYVA_4224);
+
     kernels.convertSource_YUYV_422 =
         cl::Kernel(convertProgram, c_KernelName_convertSource_YUYV_422.data(), &res);
 
@@ -298,6 +303,11 @@ auto OpenCLDeviceProvider::CreateKernels() const -> std::expected<RenderPipeline
         cl::Kernel(convertProgram, c_KernelName_convertSource_NV12.data(), &res);
 
     CHECK_KERNEL_ERROR(res, c_KernelName_convertSource_NV12);
+
+    kernels.convertSource_P216 =
+        cl::Kernel(convertProgram, c_KernelName_convertSource_P216.data(), &res);
+
+    CHECK_KERNEL_ERROR(res, c_KernelName_convertSource_P216);
 
     const auto accumulateProgramPath = std::filesystem::path{c_KernelAccumulateSourcePath};
 

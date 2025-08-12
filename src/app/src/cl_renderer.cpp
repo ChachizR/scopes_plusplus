@@ -14,8 +14,26 @@ inline constexpr auto OpenCLRenderer::SelectConvertKernel(SourceFormat sourceFor
         return m_kernels.convertSource_RGBA_8888;
     case SourceFormat::RGBX_8888:
         return m_kernels.convertSource_RGBX_8888;
+    case SourceFormat::BGRA_8888:
+        return m_kernels.convertSource_BGRA_8888;
+    case SourceFormat::BGRX_8888:
+        return m_kernels.convertSource_BGRX_8888;
+    case SourceFormat::ARGB_8888:
+        return m_kernels.convertSource_ARGB_8888;
+    case SourceFormat::RGB_888:
+        return m_kernels.convertSource_RGB_888;
+    case SourceFormat::BGR_888_InvY:
+        return m_kernels.convertSource_BGR_888_InvY;
     case SourceFormat::UYVY_422:
         return m_kernels.convertSource_UYVY_422;
+    case SourceFormat::UYVA_4224:
+        return m_kernels.convertSource_UYVA_4224;
+    case SourceFormat::YUYV_422:
+        return m_kernels.convertSource_YUYV_422;
+    case SourceFormat::NV12:
+        return m_kernels.convertSource_NV12;
+    case SourceFormat::P216:
+        return m_kernels.convertSource_P216;
     }
     return m_kernels.convertSource_RGBA_8888; // Default to RGBA_8888 if no match found
 }
@@ -86,13 +104,13 @@ void OpenCLRenderer::ResizeGLTextures() {
 void OpenCLRenderer::ResizeBuffers() {
 
     m_sourceSizeBytes = GetSourceSize(m_sourceFormat, m_sourceDims);
-    m_rgbaSizeBytes   = m_sourceDims.Area() * 4;
-    m_yuvSizeBytes    = m_sourceDims.Area() * 3;
+    m_rgbaSizeBytes   = m_sourceDims.Area() * 4 * sizeof(cl_float);
+    m_yuvSizeBytes    = m_sourceDims.Area() * 3 * sizeof(cl_float);
 
     m_bufSource     = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_WRITE_ONLY, m_sourceSizeBytes);
     m_bufIntermRGBA = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, m_rgbaSizeBytes);
     m_bufIntermYUV  = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, m_yuvSizeBytes);
-    // m_bufIntermXYZ  = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, m_yuvSizeBytes);
+    m_bufIntermXYZ  = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, m_yuvSizeBytes);
 
     std::println("Resized OpenCL buffers: {}x{} "
                  "Source: {} bytes, "
@@ -102,12 +120,12 @@ void OpenCLRenderer::ResizeBuffers() {
                  m_sourceSizeBytes, m_rgbaSizeBytes, m_yuvSizeBytes);
 
     if (!m_buffersInitialized) [[unlikely]] {
-        cl::size_type wfAccSize = c_WaveformSize.Area() * sizeof(cl_uint) * 3;
+        cl::size_type wfAccSize = c_WaveformSize.Area() * sizeof(cl_float) * 3;
 
         m_bufAccRGB = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, wfAccSize);
         m_bufAccYUV = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, wfAccSize);
 
-        cl::size_type scopeAccSize = c_ScopeSize.Area() * sizeof(cl_uint) * 4;
+        cl::size_type scopeAccSize = c_ScopeSize.Area() * sizeof(cl_float) * 4;
 
         m_bufAcc2D_UV_RGBA  = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, scopeAccSize);
         m_bufAcc2D_XYZ_RGBA = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, scopeAccSize);
@@ -117,7 +135,11 @@ void OpenCLRenderer::ResizeBuffers() {
     m_buffersInitialized = true;
 }
 
-void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDims, SourceFormat sourceFormat) {
+void OpenCLRenderer::ExecutePipeline(
+    const uint8_t* sourceData,
+    Dims2D         sourceDims,
+    SourceFormat   sourceFormat,
+    uint32_t       lineStrideBytes) {
 
     if (!sourceData) [[unlikely]]
         return;
@@ -166,9 +188,11 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
     res += convert_kernel.setArg<cl::ImageGL>(1, m_targetTextures->sourcePreview.clImageGL);
     res += convert_kernel.setArg<cl::Buffer>(2, m_bufIntermRGBA);
     res += convert_kernel.setArg<cl::Buffer>(3, m_bufIntermYUV);
-    res += convert_kernel.setArg<cl_uint>(4, m_sourceDims.width);
-    res += convert_kernel.setArg<cl_uint>(5, m_sourceDims.height);
-    res += convert_kernel.setArg<cl_int>(6, static_cast<int>(YUVColorSpace::BT709));
+    res += convert_kernel.setArg<cl::Buffer>(4, m_bufIntermXYZ);
+    res += convert_kernel.setArg<cl_uint>(5, m_sourceDims.width);
+    res += convert_kernel.setArg<cl_uint>(6, m_sourceDims.height);
+    res += convert_kernel.setArg<cl_uint>(7, lineStrideBytes);
+    res += convert_kernel.setArg<cl_int>(8, static_cast<cl_int>(ColorSpace::BT709));
 
     CHECK_CL_ERROR_RET(res, "Failed to set OpenCL convert kernel arguments");
 
@@ -208,7 +232,7 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
     res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(5, m_targetTextures->wfRGBBlacks.clImageGL);
     res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(6, m_targetTextures->wfYUVParade.clImageGL);
     res += m_kernels.createWaveformImages.setArg<cl_uint>(7, sourceDims.width);
-    res += m_kernels.createWaveformImages.setArg<cl_int>(8, static_cast<cl_int>(YUVColorSpace::BT709));
+    res += m_kernels.createWaveformImages.setArg<cl_int>(8, static_cast<cl_int>(ColorSpace::BT709));
     res += m_kernels.createWaveformImages.setArg<cl_float>(9, brightness);
 
     CHECK_CL_ERROR_RET(res, "Failed to set OpenCL create waveform images kernel arguments");
@@ -228,13 +252,13 @@ void OpenCLRenderer::ExecutePipeline(const uint8_t* sourceData, Dims2D sourceDim
 
     CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate UV scope kernel arguments");
 
-    res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(0, m_bufIntermRGBA);
+    res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(0, m_bufIntermXYZ);
     res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(1, m_bufAcc2D_XYZ_RGBA);
     res += m_kernels.accumulateXYZScope.setArg<cl_uint>(2, m_sourceDims.width);
     res += m_kernels.accumulateXYZScope.setArg<cl_uint>(3, m_sourceDims.height);
     res += m_kernels.accumulateXYZScope.setArg<cl_uchar>(4, 0);
     res += m_kernels.accumulateXYZScope.setArg<CLRect2D>(5, CLRect2D{0, 0, 0, 0});
-    res += m_kernels.accumulateXYZScope.setArg<cl_int>(6, static_cast<cl_int>(YUVColorSpace::BT709));
+    res += m_kernels.accumulateXYZScope.setArg<cl_int>(6, static_cast<cl_int>(ColorSpace::BT709));
 
     CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate XYZ scope kernel arguments");
 

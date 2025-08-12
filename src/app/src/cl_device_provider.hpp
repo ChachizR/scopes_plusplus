@@ -17,8 +17,10 @@ struct RenderPipelineKernels {
     cl::Kernel convertSource_BGR_888_InvY;
 
     cl::Kernel convertSource_UYVY_422;
+    cl::Kernel convertSource_UYVA_4224;
     cl::Kernel convertSource_YUYV_422;
     cl::Kernel convertSource_NV12;
+    cl::Kernel convertSource_P216;
 
     cl::Kernel accumulateWaveforms;
     cl::Kernel accumulateUVScope;
@@ -88,16 +90,18 @@ private:
 
     static constexpr auto c_KernelConvertSourcePath = "./kernels/01_convert.cl"sv;
 
-    static constexpr auto c_KernelName_convertSource_RGBA_8888    = "convertSource_RGBA_8888_to_RGBA_YUV"sv;
-    static constexpr auto c_KernelName_convertSource_RGBX_8888    = "convertSource_RGBX_8888_to_RGBA_YUV"sv;
-    static constexpr auto c_KernelName_convertSource_BGRA_8888    = "convertSource_BGRA_8888_to_RGBA_YUV"sv;
-    static constexpr auto c_KernelName_convertSource_BGRX_8888    = "convertSource_BGRX_8888_to_RGBA_YUV"sv;
-    static constexpr auto c_KernelName_convertSource_ARGB_8888    = "convertSource_ARGB_8888_to_RGBA_YUV"sv;
-    static constexpr auto c_KernelName_convertSource_RGB_888      = "convertSource_RGB_888_to_RGBA_YUV"sv;
-    static constexpr auto c_KernelName_convertSource_BGR_888_InvY = "convertSource_BGR_888_InvY_to_RGBA_YUV"sv;
-    static constexpr auto c_KernelName_convertSource_UYVY_422     = "convertSource_UYVY_422_to_RGBA_YUV"sv;
-    static constexpr auto c_KernelName_convertSource_YUYV_422     = "convertSource_YUYV_422_to_RGBA_YUV"sv;
-    static constexpr auto c_KernelName_convertSource_NV12         = "convertSource_NV12_to_RGBA_YUV"sv;
+    static constexpr auto c_KernelName_convertSource_RGBA_8888    = "convertSource_RGBA_8888"sv;
+    static constexpr auto c_KernelName_convertSource_RGBX_8888    = "convertSource_RGBX_8888"sv;
+    static constexpr auto c_KernelName_convertSource_BGRA_8888    = "convertSource_BGRA_8888"sv;
+    static constexpr auto c_KernelName_convertSource_BGRX_8888    = "convertSource_BGRX_8888"sv;
+    static constexpr auto c_KernelName_convertSource_ARGB_8888    = "convertSource_ARGB_8888"sv;
+    static constexpr auto c_KernelName_convertSource_RGB_888      = "convertSource_RGB_888"sv;
+    static constexpr auto c_KernelName_convertSource_BGR_888_InvY = "convertSource_BGR_888_InvY"sv;
+    static constexpr auto c_KernelName_convertSource_UYVY_422     = "convertSource_UYVY_422"sv;
+    static constexpr auto c_KernelName_convertSource_UYVA_4224    = "convertSource_UYVA_4224"sv;
+    static constexpr auto c_KernelName_convertSource_YUYV_422     = "convertSource_YUYV_422"sv;
+    static constexpr auto c_KernelName_convertSource_NV12         = "convertSource_NV12"sv;
+    static constexpr auto c_KernelName_convertSource_P216         = "convertSource_P216"sv;
 
     static constexpr auto c_KernelAccumulateSourcePath = "./kernels/02_accumulate.cl"sv;
 

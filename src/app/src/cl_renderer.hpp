@@ -106,8 +106,10 @@ enum class SourceFormat {
     BGR_888_InvY,
     UYVY_422,
     YUYV_422,
+    UYVA_4224,
     NV12,
     UYVY10_422,
+    P216
 };
 
 [[nodiscard]]
@@ -121,19 +123,61 @@ static inline constexpr auto SourceFormatFromNDIFourCC(NDIlib_FourCC_video_type_
         return SourceFormat::BGRX_8888;
     case NDIlib_FourCC_type_RGBX:
         return SourceFormat::RGBX_8888;
-    case NDIlib_FourCC_type_NV12:
-        return SourceFormat::NV12;
     case NDIlib_FourCC_type_UYVY:
         return SourceFormat::UYVY_422;
+    case NDIlib_FourCC_type_UYVA:
+        return SourceFormat::UYVA_4224;
+    case NDIlib_FourCC_type_P216:
+        return SourceFormat::P216;
+    case NDIlib_FourCC_type_NV12:
+        return SourceFormat::NV12;
+
     }
     return SourceFormat::unknown;
 }
 
-enum class YUVColorSpace : int32_t {
+[[nodiscard]]
+static inline constexpr auto SourceFormatToString(SourceFormat format ) noexcept -> std::string_view {
+    switch (format) {
+    case SourceFormat::unknown:
+        return "Unknown";
+    case SourceFormat::RGBA_8888:
+        return "RGBA 8888";
+    case SourceFormat::RGBX_8888:
+        return "RGBX 8888";
+    case SourceFormat::BGRA_8888:
+        return "BGRA 8888";
+    case SourceFormat::BGRX_8888:
+        return "BGRX 8888";
+    case SourceFormat::ARGB_8888:
+        return "ARGB 8888";
+    case SourceFormat::RGB_888:
+        return "RGB 888";
+    case SourceFormat::BGR_888_InvY:
+        return "BGR 888 (Inverted Y)";
+    case SourceFormat::UYVY_422:
+        return "UYVY 422";
+    case SourceFormat::YUYV_422:
+        return "YUYV 422";
+    case SourceFormat::UYVA_4224:
+        return "UYVA 4224";
+    case SourceFormat::NV12:
+        return "NV12";
+    case SourceFormat::UYVY10_422:
+        return "UYVY10 422";
+    case SourceFormat::P216:
+        return "P216";
+    }
+    return "Unknown Format";
+}
+
+enum class ColorSpace : int32_t {
     unknown = 0,
-    BT601,
+    BT601_525,
+    BT601_625,
     BT709,
     BT2020,
+    SRGB
 };
 
 [[nodiscard]]
@@ -146,15 +190,19 @@ static inline constexpr auto GetSourceSize(SourceFormat format, Dims2D size) noe
     case SourceFormat::BGRA_8888:
     case SourceFormat::ARGB_8888:
     case SourceFormat::BGRX_8888:
-        return 4ull * size.width * size.height;
+        return 4ull * size.Area();
     case SourceFormat::BGR_888_InvY:
     case SourceFormat::RGB_888:
-        return 3ull * size.width * size.height;
+        return 3ull * size.Area();
     case SourceFormat::UYVY_422:
     case SourceFormat::YUYV_422:
-        return 2ull * size.width * size.height;
+        return 2ull * size.Area();
+    case SourceFormat::UYVA_4224:
+        return 3ull * size.Area();
+    case SourceFormat::P216:
+        return 2ull * size.Area() * sizeof(uint16_t);
     case SourceFormat::NV12:
-        return static_cast<uint64_t>(ceilf(1.5f * size.width * size.height));
+        return static_cast<uint64_t>(ceilf(1.5f * size.Area()));
     case SourceFormat::UYVY10_422:
         return static_cast<uint64_t>((47 + size.width / 48) * 128 * size.height);
     }
@@ -186,7 +234,7 @@ private:
     cl::Buffer m_bufSource;
     cl::Buffer m_bufIntermRGBA;
     cl::Buffer m_bufIntermYUV;
-    // cl::Buffer m_bufIntermXYZ;
+    cl::Buffer m_bufIntermXYZ;
 
     cl::Buffer m_bufAccRGB, m_bufAccYUV;
     cl::Buffer m_bufAcc2D_UV_RGBA, m_bufAcc2D_XYZ_RGBA, m_bufAcc2D_DIA_RGBA;
@@ -239,10 +287,18 @@ public:
         return m_targetTextures.get();
     }
 
-    void ExecutePipeline(
-        const uint8_t* sourceData,
-        Dims2D         sourceSize,
-        SourceFormat   sourceFormat);
+    void ExecutePipeline(const uint8_t* sourceData, Dims2D sourceSize, SourceFormat sourceFormat, uint32_t lineStrideBytes);
 };
 
 } // namespace scpp
+
+template<>
+struct std::formatter<scpp::SourceFormat, char> {
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+    template<typename FormatContext>
+    auto format(const scpp::SourceFormat& format, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{}", scpp::SourceFormatToString(format));
+    }
+};

@@ -12,9 +12,13 @@ bool isWithin(cl_rect_2D rect, int x, int y) {
            y < rect.y + rect.height;
 }
 
+inline uchar bin(float value) {
+    return (uchar)floor(value * 255.f);
+}
+
 __kernel void accumulateWaveforms(
-    __global const uchar* in_rgba,
-    __global const uchar* in_yuv,
+    __global const float* in_rgba,
+    __global const float* in_yuv,
     __global uint*        out_hist_rgb,
     __global uint*        out_hist_yuv,
     uint src_width, uint src_height,
@@ -58,14 +62,14 @@ __kernel void accumulateWaveforms(
         // check if the pixel is within the mask rectangle
         if (mask_enabled == 0 || isWithin(mask_rect, x, y)) {
             // RGB WF, RGB Parade WF, RGB Blacks WF
-            atomic_inc(&local_hist_rgb_r[in_rgba[rgbaPB + 0]]);
-            atomic_inc(&local_hist_rgb_g[in_rgba[rgbaPB + 1]]);
-            atomic_inc(&local_hist_rgb_b[in_rgba[rgbaPB + 2]]);
+            atomic_inc(&local_hist_rgb_r[bin(in_rgba[rgbaPB + 0])]);
+            atomic_inc(&local_hist_rgb_g[bin(in_rgba[rgbaPB + 1])]);
+            atomic_inc(&local_hist_rgb_b[bin(in_rgba[rgbaPB + 2])]);
 
             // Luma WF, YUV Parade
-            atomic_inc(&local_hist_yuv_y[in_yuv[yuvPB + 0]]);
-            atomic_inc(&local_hist_yuv_u[in_yuv[yuvPB + 1]]);
-            atomic_inc(&local_hist_yuv_v[in_yuv[yuvPB + 2]]);
+            atomic_inc(&local_hist_yuv_y[bin(in_yuv[yuvPB + 0])]);
+            atomic_inc(&local_hist_yuv_u[bin(in_yuv[yuvPB + 1])]);
+            atomic_inc(&local_hist_yuv_v[bin(in_yuv[yuvPB + 2])]);
         }
     }
 
@@ -88,8 +92,8 @@ __kernel void accumulateWaveforms(
 }
 
 __kernel void accumulateUVScope(
-    __global const uchar* in_rgba,
-    __global const uchar* in_yuv,
+    __global const float* in_rgba,
+    __global const float* in_yuv,
     __global uint*        out_hist2d_uv_rgba,
     uint                  src_width,
     uint                  src_height,
@@ -113,10 +117,10 @@ __kernel void accumulateUVScope(
     // uchar G = in_rgba[rgbaPB + 1];
     // uchar B = in_rgba[rgbaPB + 2];
 
-    uchar U = in_yuv[yuvPB + 1];
-    uchar V = in_yuv[yuvPB + 2];
+    float U = in_yuv[yuvPB + 1]; // 0-1
+    float V = in_yuv[yuvPB + 2]; // 0-1
 
-    uint sc_id = (255 - V) * SC_WIDTH + U;
+    uint sc_id = bin(1.f - V) * SC_WIDTH + bin(U);
 
     // atomic_max(&out_hist2d_uv_rgba[sc_id * 4 + 0], R);
     // atomic_max(&out_hist2d_uv_rgba[sc_id * 4 + 1], G);
@@ -125,7 +129,7 @@ __kernel void accumulateUVScope(
 }
 
 __kernel void accumulateXYZScope(
-    __global const uchar* in_rgba,
+    __global const float* in_xyz,
     __global uint*        out_hist2d_xyz_rgba,
     uint                  src_width,
     uint                  src_height,
@@ -143,20 +147,17 @@ __kernel void accumulateXYZScope(
         return;
 
     uint   src_gid = y * src_width + x;
-    size_t rgbaPB  = src_gid * 4;
+    size_t xyzPB   = src_gid * 3;
 
-    uchar R = in_rgba[rgbaPB + 0];
-    uchar G = in_rgba[rgbaPB + 1];
-    uchar B = in_rgba[rgbaPB + 2];
-
-    float X, Y, Z;
-    rgbToXYZ(R, G, B, colorspace, &X, &Y, &Z);
+    float X = in_xyz[xyzPB + 0];
+    float Y = in_xyz[xyzPB + 1];
+    float Z = in_xyz[xyzPB + 2];
 
     float XX = X / (X + Y + Z);
     float YY = Y / (X + Y + Z);
 
-    uint sc_x = (uint)floor((float)(SC_WIDTH - 1) * XX);
-    uint sc_y = (uint)floor((float)(SC_HEIGHT - 1) * YY);
+    uchar sc_x = bin(XX);
+    uchar sc_y = bin(YY);
 
     uint sc_id = sc_y * SC_WIDTH + sc_x;
 
@@ -167,7 +168,7 @@ __kernel void accumulateXYZScope(
 }
 
 __kernel void accumulateDiaScope(
-    __global const uchar* in_rgba,
+    __global const float* in_rgba,
     __global uint*        out_hist2d_dia_rgba,
     uint                  src_width,
     uint                  src_height,
@@ -185,25 +186,25 @@ __kernel void accumulateDiaScope(
     uint   src_gid = y * src_width + x;
     size_t rgbaPB  = src_gid * 4;
 
-    uchar R = in_rgba[rgbaPB + 0];
-    uchar G = in_rgba[rgbaPB + 1];
-    uchar B = in_rgba[rgbaPB + 2];
+    float R = in_rgba[rgbaPB + 0];
+    float G = in_rgba[rgbaPB + 1];
+    float B = in_rgba[rgbaPB + 2];
 
-    uchar xGB = clamp8((uint)rint(-.5f * (float)G + .5f * (float)B + 128.f));
-    uchar yGB = 255 - clamp8((uint)rint(.25f * (float)G + .25f * (float)B + 128.f));
+    float xGB = -.5f * G + .5f * B + 0.5f;
+    float yGB = .25f * G + .25f * B + 0.5f;
 
-    uint sc_id_gb = yGB * SC_WIDTH + xGB;
+    yGB = 1.f - yGB;
 
-    // atomic_max(&out_hist2d_dia_rgba[sc_id_gb * 4 + 1], G);
-    // atomic_max(&out_hist2d_dia_rgba[sc_id_gb * 4 + 2], B);
+    uint sc_id_gb = bin(yGB) * SC_WIDTH + bin(xGB);
+
     atomic_inc(&out_hist2d_dia_rgba[sc_id_gb * 4 + 3]);
 
-    uchar xGR = clamp8((uint)rint(-.5f * (float)G + .5f * (float)R + 128.f));
-    uchar yGR = 255 - clamp8((uint)rint(-.25f * (float)G - .25f * (float)R + 128.f));
+    float xGR = -.5f * G + .5f * R + .5f;
+    float yGR = -.25f * G - .25f * R + 0.5f;
 
-    uint sc_id_gr = yGR * SC_WIDTH + xGR;
+    yGR = 1.f - yGR;
 
-    // atomic_max(&out_hist2d_dia_rgba[sc_id_gr * 4 + 0], R);
-    // atomic_max(&out_hist2d_dia_rgba[sc_id_gr * 4 + 1], G);
+    uint sc_id_gr = bin(yGR) * SC_WIDTH + bin(xGR);
+
     atomic_inc(&out_hist2d_dia_rgba[sc_id_gr * 4 + 3]);
 }

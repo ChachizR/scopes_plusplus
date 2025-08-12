@@ -7,36 +7,15 @@ inline uchar preMultiply(uchar a, uchar b) {
     return (uchar)rint(((float)a * (float)b) / 255.f);
 }
 
-#define CS_BT601 1
-#define CS_BT709 2
-#define CS_BT2020 3
-
-void yuvToRgb(uchar y, uchar u, uchar v, uchar* r, uchar* g, uchar* b,
-              int colorspace) {
-    int oY = y - 16;
-    int oU = u - 128;
-    int oV = v - 128;
-
-    float Y = 1.16438f * oY;
-
-    if (colorspace == CS_BT601) {
-        *r = clamp8((int)rint(Y + 1.59603f * oV));
-        *g = clamp8((int)rint(Y - 0.39176f * oU - 0.81297f * oV));
-        *b = clamp8((int)rint(Y + 2.01723f * oU));
-    } else if (colorspace == CS_BT709) {
-        *r = clamp8((int)rint(Y + 1.79274f * oV));
-        *g = clamp8((int)rint(Y - 0.21325f * oU - 0.53291f * oV));
-        *b = clamp8((int)rint(Y + 2.1124f * oU));
-    } else if (colorspace == CS_BT2020) {
-        *r = clamp8((int)rint(Y + 1.67867f * oV));
-        *g = clamp8((int)rint(Y - 0.18733f * oU - 0.65042f * oV));
-        *b = clamp8((int)rint(Y + 2.14177f * oU));
-    }
-}
+#define CS_BT601_525 1
+#define CS_BT601_625 2
+#define CS_BT709 3
+#define CS_BT2020 4
+#define CS_sRGB 5
 
 void rgbToYuv(uchar r, uchar g, uchar b, uchar* y, uchar* u, uchar* v,
               int colorspace) {
-    if (colorspace == CS_BT601) {
+    if (colorspace == CS_BT601_525) {
         *y = clamp8(16 + (int)rint(r * 0.25679f + g * 0.50413f + b * 0.09791f));
         *u = clamp8(128 + (int)rint(-0.14822f * r - 0.29099f * g + 0.43922f * b));
         *v = clamp8(128 + (int)rint(0.43922f * r - 0.36779f * g - 0.07143f * b));
@@ -57,7 +36,7 @@ void rgbToXYZ(uchar r, uchar g, uchar b, int colorspace, float* X, float* Y, flo
     float g_f = g / 255.0f;
     float b_f = b / 255.0f;
 
-    if (colorspace == CS_BT601) {
+    if (colorspace == CS_BT601_525) {
         *X = r_f * 0.14165220f + g_f * 0.11236989f + b_f * 0.05867791f;
         *Y = r_f * 0.07303942f + g_f * 0.23248942f + b_f * 0.02347116f;
         *Z = r_f * 0.00663995f + g_f * 0.04262306f + b_f * 0.30903699f;

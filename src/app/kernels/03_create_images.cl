@@ -1,13 +1,15 @@
 #include "common.cl"
+#include "colorspaces.cl"
 
-__kernel void createWaveformImages(__global const uint* in_hist_rgb,
-                                   __global const uint* in_hist_yuv,
-                                   write_only image2d_t out_wf_luma,
-                                   write_only image2d_t out_wf_rgb,
-                                   write_only image2d_t out_wf_rgb_parade,
-                                   write_only image2d_t out_wf_rgb_blacks,
-                                   write_only image2d_t out_wf_yuv_parade,
-                                   uint src_width, int colorspace, float brightness) {
+__kernel void createWaveformImages(
+    __global const uint* in_hist_rgb,
+    __global const uint* in_hist_yuv,
+    write_only image2d_t out_wf_luma,
+    write_only image2d_t out_wf_rgb,
+    write_only image2d_t out_wf_rgb_parade,
+    write_only image2d_t out_wf_rgb_blacks,
+    write_only image2d_t out_wf_yuv_parade,
+    uint src_width, int colorspace, float brightness) {
     size_t x  = get_global_id(0);
     size_t y  = get_global_id(1);
     int2   xy = (int2)(x, y);
@@ -24,16 +26,16 @@ __kernel void createWaveformImages(__global const uint* in_hist_rgb,
 
     // ===== LUMA =====
 
-    g = (float)clamp8(in_hist_yuv[readPB + 0] * brightness) / 255.f;
+    a = (float)clamp8(in_hist_yuv[readPB + 0] * brightness) / 255.f;
 
-    write_imagef(out_wf_luma, xy, (float4)(0.f, g, 0.f, g));
+    write_imagef(out_wf_luma, xy, (float4)(0.f, 1.f, 0.f, a));
 
     // ===== RGB =====
 
-    r = (float)clamp8(in_hist_rgb[readPB + 0] * brightness) / 255.f;
-    g = (float)clamp8(in_hist_rgb[readPB + 1] * brightness) / 255.f;
-    b = (float)clamp8(in_hist_rgb[readPB + 2] * brightness) / 255.f;
-    a = max(r, max(g, b));
+    r = (float)in_hist_rgb[readPB + 0] * brightness / 255.f;
+    g = (float)in_hist_rgb[readPB + 1] * brightness / 255.f;
+    b = (float)in_hist_rgb[readPB + 2] * brightness / 255.f;
+    a = 1.f;
 
     write_imagef(out_wf_rgb, xy, (float4)(r, g, b, a));
 
@@ -51,7 +53,7 @@ __kernel void createWaveformImages(__global const uint* in_hist_rgb,
                 255.f;
             g = 0.f;
             b = 0.f;
-            a = r;
+            a = 1.f;
         } else if (x < 2 * WF_WIDTH / 3) {
             r = 0.f;
             g = ((float)(in_hist_rgb[src_gid * 3 + 1] +
@@ -60,7 +62,7 @@ __kernel void createWaveformImages(__global const uint* in_hist_rgb,
                  brightness / 3.f) /
                 255.f;
             b = 0.f;
-            a = g;
+            a = 1.f;
         } else {
             r = 0.f;
             g = 0.f;
@@ -69,7 +71,7 @@ __kernel void createWaveformImages(__global const uint* in_hist_rgb,
                          in_hist_rgb[src_gid * 3 + 8]) *
                  brightness / 3.f) /
                 255.f;
-            a = b;
+            a = 1.f;
         }
 
         write_imagef(out_wf_rgb_parade, xy, (float4)(r, g, b, a));
@@ -81,10 +83,10 @@ __kernel void createWaveformImages(__global const uint* in_hist_rgb,
         uint src_y   = y * 0.15f;
         uint src_gid = src_y * gx + x;
 
-        r = (float)clamp8(in_hist_rgb[src_gid * 3 + 0] * brightness) / 255.f;
-        g = (float)clamp8(in_hist_rgb[src_gid * 3 + 1] * brightness) / 255.f;
-        b = (float)clamp8(in_hist_rgb[src_gid * 3 + 2] * brightness) / 255.f;
-        a = max(r, max(g, b));
+        r = (float)in_hist_rgb[src_gid * 3 + 0] * brightness / 255.f;
+        g = (float)in_hist_rgb[src_gid * 3 + 1] * brightness / 255.f;
+        b = (float)in_hist_rgb[src_gid * 3 + 2] * brightness / 255.f;
+        a = 1.f;
 
         write_imagef(out_wf_rgb_blacks, xy, (float4)(r, g, b, a));
     }
@@ -113,24 +115,25 @@ __kernel void createWaveformImages(__global const uint* in_hist_rgb,
                    brightness / 3.f) /
                   255.f;
         if (x < WF_WIDTH / 3) {
-            r = Y;
-            g = Y;
-            b = Y;
+            r = 255.f;
+            g = 255.f;
+            b = 255.f;
             a = Y;
         } else if (x < 2 * WF_WIDTH / 3) {
-            uchar ru, gu, bu;
-            yuvToRgb(128, y, 128, &ru, &gu, &bu, colorspace);
-            r = (float)ru * U / 255.f;
-            g = (float)gu * U / 255.f;
-            b = (float)bu * U / 255.f;
+
+            float3 rgb = yuv_709_Limited_to_RGB_709((float3)(0.5f, y / 255.f, 0.5f));
+
+            r = rgb.x;
+            g = rgb.y;
+            b = rgb.z;
             a = U;
 
         } else {
-            uchar rv, gv, bv;
-            yuvToRgb(128, 128, y, &rv, &gv, &bv, colorspace);
-            r = (float)rv * V / 255.f;
-            g = (float)gv * V / 255.f;
-            b = (float)bv * V / 255.f;
+            float3 rgb = yuv_709_Limited_to_RGB_709((float3)(0.5f, 0.5f, y / 255.f));
+
+            r = rgb.x;
+            g = rgb.y;
+            b = rgb.z;
             a = V;
         }
 
@@ -157,50 +160,46 @@ __kernel void createScopeImages(
 
     size_t rgbaPB = gid * 4;
 
-    int2 xy = (int2)(x, y);
+    int2   xy = (int2)(x, y);
+    float2 XY = (float2)(x / 255.f, y / 255.f);
 
-    float  R, G, B, A;
-    float4 color;
+    float4 rgba = (float4)(0.f, 0.f, 0.f, 0.f);
 
     // ===== UV SCOPE =====
 
     {
-        A = (float)in_hist2d_uv_rgba[rgbaPB + 3] / 255.f * brightness;
-        // R = (float)in_hist2d_uv_rgba[rgbaPB + 0] / 255.f * A;
-        // G = (float)in_hist2d_uv_rgba[rgbaPB + 1] / 255.f * A;
-        // B = (float)in_hist2d_uv_rgba[rgbaPB + 2] / 255.f * A;
-        uchar r, g, b;
-        yuvToRgb(128, x, SC_HEIGHT - y, &r, &g, &b, CS_BT709);
+        rgba.w = (float)in_hist2d_uv_rgba[rgbaPB + 3] / 255.f * brightness;
 
-        R = (float)r / 255.f;
-        G = (float)g / 255.f;
-        B = (float)b / 255.f;
+        rgba.xyz = yuv_709_Limited_to_RGB_709((float3)(0.5f, x / 255.f, (SC_HEIGHT - y) / 255.f));
 
-        color = (float4)(R, G, B, A);
-        write_imagef(out_sc_uv, xy, color);
+        write_imagef(out_sc_uv, xy, rgba);
     }
 
     // ===== XYZ SCOPE =====
 
     {
-        A = (float)in_hist2d_xyz_rgba[rgbaPB + 3] / 255.f * brightness;
-        // R = (float)in_hist2d_xyz_rgba[rgbaPB + 0] / 255.f * A;
-        // G = (float)in_hist2d_xyz_rgba[rgbaPB + 1] / 255.f * A;
-        // B = (float)in_hist2d_xyz_rgba[rgbaPB + 2] / 255.f * A;
+        rgba.w = (float)in_hist2d_xyz_rgba[rgbaPB + 3] / 255.f * brightness;
 
-        color = (float4)(A, A, A, A);
-        write_imagef(out_sc_xyz, xy, color);
+        rgba.xyz = xy_to_RGB_709(XY.x, XY.y, 0.5f);
+
+        write_imagef(out_sc_xyz, xy, rgba);
     }
 
     // ===== DIAMOND SCOPE =====
 
     {
-        A = (float)in_hist2d_dia_rgba[rgbaPB + 3] / 255.f * brightness;
-        // R = (float)in_hist2d_dia_rgba[rgbaPB + 0] / 255.f * A;
-        // G = (float)in_hist2d_dia_rgba[rgbaPB + 1] / 255.f * A;
-        // B = (float)in_hist2d_dia_rgba[rgbaPB + 2] / 255.f * A;
+        rgba.w = (float)in_hist2d_dia_rgba[rgbaPB + 3] / 255.f * brightness;
 
-        color = (float4)(A, A, A, A);
-        write_imagef(out_sc_dia, xy, color);
+        if (XY.y <= 0.5f) {
+            rgba.x = 0.f;
+            rgba.y = 1.5f - XY.x - 2.f * XY.y;
+            rgba.z = 0.5f + XY.x - 2.f * XY.y;
+        } else {
+            rgba.x = XY.x + 2.f * XY.y - 1.5f;
+            rgba.y = 2.f * XY.y - XY.x - 0.5f;
+            rgba.z = 0.f;
+        }
+
+        write_imagef(out_sc_dia, xy, rgba);
     }
 }

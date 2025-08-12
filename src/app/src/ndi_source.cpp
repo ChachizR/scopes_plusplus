@@ -75,7 +75,8 @@ auto NDISource::HandleVideoFrame(const NDIlib_video_frame_v2_t& videoFrame) noex
     m_renderer.ExecutePipeline(
         videoFrame.p_data,
         Dims2D{(uint32_t)videoFrame.xres, (uint32_t)videoFrame.yres},
-        sourceFormat);
+        sourceFormat,
+        videoFrame.line_stride_in_bytes);
 
     const auto endTime = std::chrono::steady_clock::now();
 
@@ -84,7 +85,7 @@ auto NDISource::HandleVideoFrame(const NDIlib_video_frame_v2_t& videoFrame) noex
     std::println(
         "NDI Frame received: {}x{} {}, duration: {}us",
         videoFrame.xres, videoFrame.yres,
-        static_cast<int>(sourceFormat),
+        sourceFormat,
         duration.count());
 
     return ErrorCode::None;
