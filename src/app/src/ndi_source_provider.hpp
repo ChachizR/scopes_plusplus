@@ -6,6 +6,16 @@
 
 namespace scpp {
 
+struct NDISourceRef {
+    std::string name;
+    std::string urlAddress;
+
+    NDISourceRef(const NDIlib_source_t& source) noexcept
+        : name{source.p_ndi_name ? source.p_ndi_name : "Unknown"}
+        , urlAddress{source.p_url_address ? source.p_url_address : "Unknown"} {}
+    
+};
+
 class NDISourceProvider {
 public:
     NDISourceProvider(
@@ -22,7 +32,7 @@ private:
     NDIlib_find_instance_t m_findInstance = nullptr;
 
 
-    std::span<const NDIlib_source_t> m_sources;
+    std::vector<NDISourceRef> m_sources;
 
     std::thread m_enumerationThread;
     bool        m_shouldStop = false;
@@ -31,7 +41,7 @@ private:
 
 public:
     [[nodiscard]]
-    auto GetSources() const noexcept -> const std::span<const NDIlib_source_t> {
+    auto GetSources() const noexcept -> const std::span<const NDISourceRef> {
         return m_sources;
     }
 

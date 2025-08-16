@@ -36,10 +36,12 @@ void NDISourceProvider::EnumerationLoop() {
         uint32_t   noSources = 0;
         const auto sources   = NDIlib_find_get_current_sources(m_findInstance, &noSources);
 
-        if (sources) {
-            m_sources = std::span{sources, noSources};
-        } else {
-            m_sources = {};
+        if (noSources != m_sources.size()) {
+            m_sources.clear();
+            m_sources.reserve(noSources);
+            for (const auto& source : std::span{sources, noSources}) {
+                m_sources.emplace_back(source);
+            }
         }
 
         std::this_thread::sleep_for(m_enumerationInterval);

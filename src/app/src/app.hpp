@@ -24,6 +24,7 @@ private:
     std::unique_ptr<scpp::OpenCLDeviceProvider> m_openclDeviceProvider = nullptr;
 
     std::unique_ptr<NDISourceProvider> m_ndiSourceProvider = nullptr;
+    std::unique_ptr<VideoSource>       m_source            = nullptr;
 
 public:
     Application();
@@ -33,19 +34,15 @@ public:
     void Run();
 
 private:
-    [[nodiscard]]
-    bool InitGLFW();
+    auto InitGLFW() -> bool;
 
-    [[nodiscard]]
-    bool InitImGui();
+    auto InitImGui() -> bool;
 
-    [[nodiscard]]
-    bool LoadFonts();
+    auto LoadFonts() -> bool;
 
     void ShutdownImGui();
 
     void ShutdownGLFW();
-
 
     static inline void GLFWErrorCallback(int error, const char* description) {
         std::println("GLFW Error {}: {}", error, description);
@@ -53,7 +50,7 @@ private:
 
     // UI
 
-    void UI_Main(VideoSource* source) const noexcept;
+    void UI_Main() const noexcept;
     void UI_MainMenuBar() const noexcept;
     void UI_Settings() const noexcept;
     void UI_NDISources() const noexcept;

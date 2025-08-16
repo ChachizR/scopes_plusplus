@@ -82,11 +82,12 @@ auto NDISource::HandleVideoFrame(const NDIlib_video_frame_v2_t& videoFrame) noex
 
     const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
 
-    std::println(
-        "NDI Frame received: {}x{} {}, duration: {}us",
-        videoFrame.xres, videoFrame.yres,
-        sourceFormat,
-        duration.count());
+    m_stats.sourceDims     = Dims2D{static_cast<uint32_t>(videoFrame.xres),
+                                static_cast<uint32_t>(videoFrame.yres)};
+    m_stats.sourceFormat   = sourceFormat;
+    m_stats.sourceFPS      = static_cast<float>(videoFrame.frame_rate_N) / static_cast<float>(videoFrame.frame_rate_D);
+
+    m_stats.SetRenderTimings(duration);
 
     return ErrorCode::None;
 }

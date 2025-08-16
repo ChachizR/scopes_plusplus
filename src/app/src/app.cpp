@@ -28,7 +28,7 @@ Application::~Application() {
     ShutdownGLFW();
 }
 
-bool Application::InitGLFW() {
+auto Application::InitGLFW() -> bool {
     glfwSetErrorCallback(GLFWErrorCallback);
 
     if (!glfwInit()) {
@@ -55,7 +55,7 @@ bool Application::InitGLFW() {
     return true;
 }
 
-bool Application::InitImGui() {
+auto Application::InitImGui() -> bool {
     IMGUI_CHECKVERSION();
 
     ImGui::CreateContext();
@@ -94,7 +94,7 @@ bool Application::InitImGui() {
     return true;
 }
 
-bool Application::LoadFonts() {
+auto Application::LoadFonts() -> bool {
     ImGuiIO& io = ImGui::GetIO();
 
     m_fontRoboto = io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-VariableFont_wdth,wght.ttf");
@@ -118,8 +118,6 @@ void Application::ShutdownGLFW() {
 
 void Application::Run() {
 
-    std::unique_ptr<scpp::VideoSource> source = nullptr;
-
     while (!glfwWindowShouldClose(m_window)) {
 
         glfwPollEvents();
@@ -132,16 +130,16 @@ void Application::Run() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        if (!source) {
+        if (!m_source) {
             const auto sources = m_ndiSourceProvider->GetSources();
 
             if (!sources.empty()) {
+                NDIlib_source_t ndiLibSource{sources[0].name.c_str(), sources[0].urlAddress.c_str()};
+                m_source = std::make_unique<scpp::NDISource>(*m_openclDeviceProvider, ndiLibSource);
 
-                source = std::make_unique<scpp::NDISource>(*m_openclDeviceProvider, sources[0]);
-
-                if (source->Start() != scpp::ErrorCode::None) {
-                    std::println("Failed to start NDI source: {}", source->GetName());
-                    source.reset();
+                if (m_source->Start() != scpp::ErrorCode::None) {
+                    std::println("Failed to start NDI source: {}", m_source->GetName());
+                    m_source.reset();
                 }
             }
         }
@@ -149,7 +147,7 @@ void Application::Run() {
         if (false)
             ImGui::ShowDemoWindow();
 
-        UI_Main(source.get());
+        UI_Main();
 
         ImGui::ShowMetricsWindow();
 
@@ -174,7 +172,7 @@ void Application::Run() {
     }
 }
 
-void Application::UI_Main(VideoSource* source) const noexcept {
+void Application::UI_Main() const noexcept {
     UI_MainMenuBar();
 
     ImGui::DockSpaceOverViewport(
@@ -184,8 +182,8 @@ void Application::UI_Main(VideoSource* source) const noexcept {
     // UI_Settings();
     UI_NDISources();
 
-    if (source) {
-        auto& sourceRenderer = source->GetRenderer();
+    if (m_source) {
+        auto& sourceRenderer = m_source->GetRenderer();
         if (sourceRenderer.needsResizeFlag_mainThread) {
             sourceRenderer.ResizeGLTextures();
         }
@@ -195,13 +193,13 @@ void Application::UI_Main(VideoSource* source) const noexcept {
         auto& sourcePreview = sourceTextures->sourcePreview;
 
         ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(sourcePreview,ScaleBehavior::ScaleToFit);
+        ImGuiImageRender(sourcePreview, ScaleBehavior::ScaleToFit);
         ImGui::End();
 
         auto& wfLuma = sourceTextures->wfLuma;
 
         ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(wfLuma, ScaleBehavior::ScaleToFit,FlipBehavior::FlipVertically);
+        ImGuiImageRender(wfLuma, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
         ImGui::End();
 
         auto& wfRgb = sourceTextures->wfRGB;
@@ -243,6 +241,17 @@ void Application::UI_Main(VideoSource* source) const noexcept {
         ImGuiImageRender(scDia, ScaleBehavior::ScaleToFit);
         ImGui::End();
 
+        const auto& sourceStats = m_source->GetStats();
+        ImGui::Begin("Source Stats", nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGui::Text("Name: %s", m_source->GetName().data());
+        ImGui::Text("Dimensions: %ux%u", sourceStats.sourceDims.width, sourceStats.sourceDims.height);
+        ImGui::Text("FPS: %.2f", sourceStats.sourceFPS);
+        ImGui::Text(std::format("Format: {}", sourceStats.sourceFormat).c_str());
+        ImGui::Text("Max Render FPS: %.2f", sourceStats.maxRenderFPS);
+        ImGui::Text("Render Duration: %.4f ms", sourceStats.renderDurationMS);
+        ImGui::Text("Avg Max Render FPS: %.2f", sourceStats.avgMaxRenderFPS);
+        ImGui::Text("Avg Render Duration: %.4f ms", sourceStats.avgRenderDurationMS);
+        ImGui::End();
     }
 }
 
@@ -259,11 +268,13 @@ void Application::UI_MainMenuBar() const noexcept {
 
     ImGui::EndMainMenuBar();
 }
+
 void Application::UI_Settings() const noexcept {
     ImGui::Begin("Settings");
 
     ImGui::End();
 }
+
 void Application::UI_NDISources() const noexcept {
     const auto sources = m_ndiSourceProvider->GetSources();
 
@@ -274,9 +285,9 @@ void Application::UI_NDISources() const noexcept {
         for (const auto& source : sources) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::TextUnformatted(source.p_ndi_name);
+            ImGui::TextUnformatted(source.name.c_str());
             ImGui::TableSetColumnIndex(1);
-            ImGui::TextUnformatted(source.p_url_address);
+            ImGui::TextUnformatted(source.urlAddress.c_str());
         }
         ImGui::EndTable();
     }

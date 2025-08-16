@@ -47,6 +47,7 @@ using namespace std::literals::string_view_literals;
 
 #include <chrono>
 using namespace std::literals::chrono_literals;
+using Clock = std::chrono::steady_clock;
 
 #include <thread>
 #include <memory>
