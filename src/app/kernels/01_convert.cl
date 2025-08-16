@@ -10,7 +10,8 @@ __kernel void convertSource_RGBA_8888(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
     size_t gid = get_global_id(0);
 
     if (gid >= width * height)
@@ -52,7 +53,8 @@ __kernel void convertSource_RGBX_8888(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
     size_t gid = get_global_id(0);
 
     if (gid >= width * height)
@@ -94,7 +96,8 @@ __kernel void convertSource_BGRA_8888(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
     size_t gid = get_global_id(0);
 
     if (gid >= width * height)
@@ -136,7 +139,8 @@ __kernel void convertSource_BGRX_8888(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
     size_t gid = get_global_id(0);
     if (gid >= width * height)
         return;
@@ -175,7 +179,8 @@ __kernel void convertSource_ARGB_8888(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
 
     size_t gid = get_global_id(0);
     if (gid >= width * height)
@@ -217,7 +222,8 @@ __kernel void convertSource_RGB_888(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
 
     size_t gid = get_global_id(0);
 
@@ -260,7 +266,8 @@ __kernel void convertSource_BGR_888_InvY(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
     size_t gid = get_global_id(0);
     if (gid >= width * height)
         return;
@@ -304,7 +311,8 @@ __kernel void convertSource_UYVY_422(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
     size_t gid = get_global_id(0);
 
     if (gid >= width * height)
@@ -316,12 +324,12 @@ __kernel void convertSource_UYVY_422(
 
     float3 yuv_in = (float3)(y / 255.f, u / 255.f, v / 255.f);
 
-    float3 rgb_in         = yuv_limited_to_RGB(yuv_in, src_colorspace);
+    float3 rgb_in         = yuv_to_RGB(yuv_in, src_colorspace, yuv_range);
     float3 rgb_linear     = eotf3(rgb_in, src_colorspace);
     float3 rgb_709_linear = linearRGB_to_linearRGB_709(rgb_linear, src_colorspace);
-    float4 rgba_709       = (float4)(oetf3(rgb_709_linear, CS_BT709), 1.0f);
-    float3 yuv_709        = rgb_709_to_YUV_709_Limited(rgba_709.xyz);
-    float3 xyz            = linearRGB_709_to_XYZ(rgb_709_linear, src_colorspace);
+    float4 rgba_709       = clamp((float4)(oetf3(rgb_709_linear, CS_BT709), 1.0f), 0.f, 1.f);
+    float3 yuv_709        = clamp(rgb_709_to_YUV_709(rgba_709.xyz, yuv_range), 0.f, 1.f);
+    float3 xyz            = clamp(linearRGB_709_to_XYZ(rgb_709_linear, src_colorspace), 0.f, 1.f);
 
     out_rgba[gid * 4 + 0] = rgba_709.x;
     out_rgba[gid * 4 + 1] = rgba_709.y;
@@ -348,7 +356,8 @@ __kernel void convertSource_YUYV_422(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
     size_t gid = get_global_id(0);
 
     if (gid >= width * height)
@@ -360,12 +369,12 @@ __kernel void convertSource_YUYV_422(
 
     float3 yuv_in = (float3)(y / 255.f, u / 255.f, v / 255.f);
 
-    float3 rgb_in         = yuv_limited_to_RGB(yuv_in, src_colorspace);
+    float3 rgb_in         = yuv_to_RGB(yuv_in, src_colorspace, yuv_range);
     float3 rgb_linear     = eotf3(rgb_in, src_colorspace);
     float3 rgb_709_linear = linearRGB_to_linearRGB_709(rgb_linear, src_colorspace);
-    float4 rgba_709       = (float4)(oetf3(rgb_709_linear, CS_BT709), 1.0f);
-    float3 yuv_709        = rgb_709_to_YUV_709_Limited(rgba_709.xyz);
-    float3 xyz            = linearRGB_709_to_XYZ(rgb_709_linear, src_colorspace);
+    float4 rgba_709       = clamp((float4)(oetf3(rgb_709_linear, CS_BT709), 1.0f), 0.f, 1.f);
+    float3 yuv_709        = clamp(rgb_709_to_YUV_709(rgba_709.xyz, yuv_range), 0.f, 1.f);
+    float3 xyz            = clamp(linearRGB_709_to_XYZ(rgb_709_linear, src_colorspace), 0.f, 1.f);
 
     out_rgba[gid * 4 + 0] = rgba_709.x;
     out_rgba[gid * 4 + 1] = rgba_709.y;
@@ -392,7 +401,8 @@ __kernel void convertSource_NV12(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
     size_t gid = get_global_id(0);
 
     if (gid >= width * height)
@@ -411,13 +421,14 @@ __kernel void convertSource_NV12(
     uchar u = in_src[uvStart + pUV * 2];
     uchar v = in_src[uvStart + pUV * 2 + 1];
 
-    float3 yuv_in         = (float3)(y / 255.f, u / 255.f, v / 255.f);
-    float3 rgb_in         = yuv_limited_to_RGB(yuv_in, src_colorspace);
+    float3 yuv_in = (float3)(y / 255.f, u / 255.f, v / 255.f);
+
+    float3 rgb_in         = yuv_to_RGB(yuv_in, src_colorspace, yuv_range);
     float3 rgb_linear     = eotf3(rgb_in, src_colorspace);
     float3 rgb_709_linear = linearRGB_to_linearRGB_709(rgb_linear, src_colorspace);
-    float4 rgba_709       = (float4)(oetf3(rgb_709_linear, CS_BT709), 1.0f);
-    float3 yuv_709        = rgb_709_to_YUV_709_Limited(rgba_709.xyz);
-    float3 xyz            = linearRGB_709_to_XYZ(rgb_709_linear, src_colorspace);
+    float4 rgba_709       = clamp((float4)(oetf3(rgb_709_linear, CS_BT709), 1.0f), 0.f, 1.f);
+    float3 yuv_709        = clamp(rgb_709_to_YUV_709(rgba_709.xyz, yuv_range), 0.f, 1.f);
+    float3 xyz            = clamp(linearRGB_709_to_XYZ(rgb_709_linear, src_colorspace), 0.f, 1.f);
 
     out_rgba[gid * 4 + 0] = rgba_709.x;
     out_rgba[gid * 4 + 1] = rgba_709.y;
@@ -444,7 +455,8 @@ __kernel void convertSource_UYVA_4224(
     uint                  width,
     uint                  height,
     uint                  stride,
-    colorspace_t          src_colorspace) {
+    colorspace_t          src_colorspace,
+    yuv_range_t           yuv_range) {
     size_t gid = get_global_id(0);
 
     if (gid >= width * height)
@@ -457,12 +469,12 @@ __kernel void convertSource_UYVA_4224(
 
     float3 yuv_in = (float3)(y / 255.f, u / 255.f, v / 255.f);
 
-    float3 rgb_in         = yuv_limited_to_RGB(yuv_in, src_colorspace);
+    float3 rgb_in         = yuv_to_RGB(yuv_in, src_colorspace, yuv_range);
     float3 rgb_linear     = eotf3(rgb_in, src_colorspace);
     float3 rgb_709_linear = linearRGB_to_linearRGB_709(rgb_linear, src_colorspace);
-    float4 rgba_709       = (float4)(oetf3(rgb_709_linear, CS_BT709), a);
-    float3 yuv_709        = rgb_709_to_YUV_709_Limited(rgba_709.xyz);
-    float3 xyz            = linearRGB_709_to_XYZ(rgb_709_linear, src_colorspace);
+    float4 rgba_709       = clamp((float4)(oetf3(rgb_709_linear, CS_BT709), 1.0f), 0.f, 1.f);
+    float3 yuv_709        = clamp(rgb_709_to_YUV_709(rgba_709.xyz, yuv_range), 0.f, 1.f);
+    float3 xyz            = clamp(linearRGB_709_to_XYZ(rgb_709_linear, src_colorspace), 0.f, 1.f);
 
     out_rgba[gid * 4 + 0] = rgba_709.x;
     out_rgba[gid * 4 + 1] = rgba_709.y;
@@ -489,7 +501,8 @@ __kernel void convertSource_P216(
     uint                   width,
     uint                   height,
     uint                   line_stride_in_bytes,
-    colorspace_t           src_colorspace) {
+    colorspace_t           src_colorspace,
+    yuv_range_t            yuv_range) {
     const size_t gid = get_global_id(0);
 
     if (gid >= width * height)
@@ -524,17 +537,12 @@ __kernel void convertSource_P216(
 
     float3 yuv_in = (float3)((float)Y16 * norm, (float)U16 * norm, (float)V16 * norm);
 
-    // limit Y to 4096 to 60160 range
-    // yuv_in.x = yuv_in.x * 219.f / 255.f + 16.f / 255.f;
-
-    clamp(yuv_in, 0.f, 1.f);
-
-    float3 rgb_in         = yuv_full_to_RGB(yuv_in, src_colorspace);
+    float3 rgb_in         = yuv_to_RGB(yuv_in, src_colorspace, yuv_range);
     float3 rgb_linear     = eotf3(rgb_in, src_colorspace);
     float3 rgb_709_linear = linearRGB_to_linearRGB_709(rgb_linear, src_colorspace);
-    float4 rgba_709       = (float4)(oetf3(rgb_709_linear, CS_BT709), 1.0f);
-    float3 yuv_709        = rgb_709_to_YUV_709_Limited(rgba_709.xyz);
-    float3 xyz            = linearRGB_709_to_XYZ(rgb_709_linear, src_colorspace);
+    float4 rgba_709       = clamp((float4)(oetf3(rgb_709_linear, CS_BT709), 1.0f), 0.f, 1.f);
+    float3 yuv_709        = clamp(rgb_709_to_YUV_709(rgba_709.xyz, yuv_range), 0.f, 1.f);
+    float3 xyz            = clamp(linearRGB_709_to_XYZ(rgb_709_linear, src_colorspace), 0.f, 1.f);
 
     out_rgba[gid * 4 + 0] = rgba_709.x;
     out_rgba[gid * 4 + 1] = rgba_709.y;

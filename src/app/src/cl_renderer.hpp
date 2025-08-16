@@ -95,6 +95,55 @@ struct TargetTextures {
         , scDia{std::move(scDia)} {}
 };
 
+enum class SourceColorSpace {
+    Linear_RGB = 0,
+    BT601_525  = 1,
+    BT601_625  = 2,
+    BT709      = 3,
+    BT2020     = 4,
+    SRGB       = 5,
+    max // only for counting
+};
+
+static inline constexpr auto SourceColorSpaceToString(SourceColorSpace colorSpace) noexcept -> std::string_view {
+    switch (colorSpace) {
+    case SourceColorSpace::Linear_RGB:
+        return "Linear RGB";
+    case SourceColorSpace::BT601_525:
+        return "BT.601 525";
+    case SourceColorSpace::BT601_625:
+        return "BT.601 625";
+    case SourceColorSpace::BT709:
+        return "BT.709";
+    case SourceColorSpace::BT2020:
+        return "BT.2020";
+    case SourceColorSpace::SRGB:
+        return "sRGB";
+    }
+    return "Unknown Color Space";
+}
+
+enum class SourceYUVRange {
+    Limited = 0, // 16-235 for Y, 16-240 for UV
+    Full    = 1, // 0-255 for Y, 0-255 for UV
+    max          // only for counting
+};
+
+static inline constexpr auto SourceYUVRangeToString(SourceYUVRange yuvRange) noexcept -> std::string_view {
+    switch (yuvRange) {
+    case SourceYUVRange::Limited:
+        return "Limited Range";
+    case SourceYUVRange::Full:
+        return "Full Range";
+    }
+    return "Unknown YUV Range";
+}
+
+struct RenderSettings {
+    SourceColorSpace colorSpace{SourceColorSpace::BT709};
+    SourceYUVRange   yuvRange{SourceYUVRange::Limited};
+};
+
 enum class SourceFormat {
     unknown = 0,
     RGBA_8888,
@@ -131,13 +180,12 @@ static inline constexpr auto SourceFormatFromNDIFourCC(NDIlib_FourCC_video_type_
         return SourceFormat::P216;
     case NDIlib_FourCC_type_NV12:
         return SourceFormat::NV12;
-
     }
     return SourceFormat::unknown;
 }
 
 [[nodiscard]]
-static inline constexpr auto SourceFormatToString(SourceFormat format ) noexcept -> std::string_view {
+static inline constexpr auto SourceFormatToString(SourceFormat format) noexcept -> std::string_view {
     switch (format) {
     case SourceFormat::unknown:
         return "Unknown";
@@ -170,15 +218,6 @@ static inline constexpr auto SourceFormatToString(SourceFormat format ) noexcept
     }
     return "Unknown Format";
 }
-
-enum class ColorSpace : int32_t {
-    unknown = 0,
-    BT601_525,
-    BT601_625,
-    BT709,
-    BT2020,
-    SRGB
-};
 
 [[nodiscard]]
 static inline constexpr auto GetSourceSize(SourceFormat format, Dims2D size) noexcept -> uint64_t {
@@ -287,7 +326,7 @@ public:
         return m_targetTextures.get();
     }
 
-    void ExecutePipeline(const uint8_t* sourceData, Dims2D sourceSize, SourceFormat sourceFormat, uint32_t lineStrideBytes);
+    void ExecutePipeline(const uint8_t* sourceData, Dims2D sourceSize, SourceFormat sourceFormat, uint32_t lineStrideBytes, RenderSettings renderSettings);
 };
 
 } // namespace scpp
@@ -300,5 +339,27 @@ struct std::formatter<scpp::SourceFormat, char> {
     template<typename FormatContext>
     auto format(const scpp::SourceFormat& format, FormatContext& ctx) const {
         return std::format_to(ctx.out(), "{}", scpp::SourceFormatToString(format));
+    }
+};
+
+template<>
+struct std::formatter<scpp::SourceColorSpace, char> {
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+    template<typename FormatContext>
+    auto format(const scpp::SourceColorSpace& colorSpace, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{}", scpp::SourceColorSpaceToString(colorSpace));
+    }
+};
+
+template<>
+struct std::formatter<scpp::SourceYUVRange, char> {
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+    template<typename FormatContext>
+    auto format(const scpp::SourceYUVRange& yuvRange, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{}", scpp::SourceYUVRangeToString(yuvRange));
     }
 };

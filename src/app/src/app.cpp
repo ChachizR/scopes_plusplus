@@ -130,20 +130,6 @@ void Application::Run() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        if (!m_source) {
-            const auto sources = m_ndiSourceProvider->GetSources();
-
-            if (!sources.empty()) {
-                NDIlib_source_t ndiLibSource{sources[0].name.c_str(), sources[0].urlAddress.c_str()};
-                m_source = std::make_unique<scpp::NDISource>(*m_openclDeviceProvider, ndiLibSource);
-
-                if (m_source->Start() != scpp::ErrorCode::None) {
-                    std::println("Failed to start NDI source: {}", m_source->GetName());
-                    m_source.reset();
-                }
-            }
-        }
-
         if (false)
             ImGui::ShowDemoWindow();
 
@@ -172,7 +158,7 @@ void Application::Run() {
     }
 }
 
-void Application::UI_Main() const noexcept {
+void Application::UI_Main() noexcept {
     UI_MainMenuBar();
 
     ImGui::DockSpaceOverViewport(
@@ -183,75 +169,9 @@ void Application::UI_Main() const noexcept {
     UI_NDISources();
 
     if (m_source) {
-        auto& sourceRenderer = m_source->GetRenderer();
-        if (sourceRenderer.needsResizeFlag_mainThread) {
-            sourceRenderer.ResizeGLTextures();
-        }
-
-        auto sourceTextures = sourceRenderer.GetTargetTextures();
-
-        auto& sourcePreview = sourceTextures->sourcePreview;
-
-        ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(sourcePreview, ScaleBehavior::ScaleToFit);
-        ImGui::End();
-
-        auto& wfLuma = sourceTextures->wfLuma;
-
-        ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(wfLuma, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        ImGui::End();
-
-        auto& wfRgb = sourceTextures->wfRGB;
-
-        ImGui::Begin(wfRgb.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(wfRgb, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        ImGui::End();
-
-        auto& wfRgbParade = sourceTextures->wfRGBParade;
-
-        ImGui::Begin(wfRgbParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        ImGui::End();
-
-        auto& wfRgbBlacks = sourceTextures->wfRGBBlacks;
-
-        ImGui::Begin(wfRgbBlacks.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        ImGui::End();
-
-        auto& wfYuvParade = sourceTextures->wfYUVParade;
-
-        ImGui::Begin(wfYuvParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        ImGui::End();
-
-        auto& scUV = sourceTextures->scUV;
-        ImGui::Begin(scUV.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(scUV, ScaleBehavior::ScaleToFit);
-        ImGui::End();
-
-        auto& scXYZ = sourceTextures->scXYZ;
-        ImGui::Begin(scXYZ.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(scXYZ, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        ImGui::End();
-
-        auto& scDia = sourceTextures->scDia;
-        ImGui::Begin(scDia.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGuiImageRender(scDia, ScaleBehavior::ScaleToFit);
-        ImGui::End();
-
-        const auto& sourceStats = m_source->GetStats();
-        ImGui::Begin("Source Stats", nullptr, ImGuiWindowFlags_NoCollapse);
-        ImGui::Text("Name: %s", m_source->GetName().data());
-        ImGui::Text("Dimensions: %ux%u", sourceStats.sourceDims.width, sourceStats.sourceDims.height);
-        ImGui::Text("FPS: %.2f", sourceStats.sourceFPS);
-        ImGui::Text(std::format("Format: {}", sourceStats.sourceFormat).c_str());
-        ImGui::Text("Max Render FPS: %.2f", sourceStats.maxRenderFPS);
-        ImGui::Text("Render Duration: %.4f ms", sourceStats.renderDurationMS);
-        ImGui::Text("Avg Max Render FPS: %.2f", sourceStats.avgMaxRenderFPS);
-        ImGui::Text("Avg Render Duration: %.4f ms", sourceStats.avgRenderDurationMS);
-        ImGui::End();
+        UI_ActiveSource();
+        UI_SourceStats();
+        UI_RenderSettings();
     }
 }
 
@@ -275,22 +195,144 @@ void Application::UI_Settings() const noexcept {
     ImGui::End();
 }
 
-void Application::UI_NDISources() const noexcept {
+void Application::UI_NDISources() noexcept {
     const auto sources = m_ndiSourceProvider->GetSources();
 
     ImGui::Begin("NDI Sources");
-    if (ImGui::BeginTable("NDI Sources Table", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+    if (ImGui::BeginTable("NDI Sources Table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("Select", ImGuiTableColumnFlags_::ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableSetupColumn("Source Name");
         ImGui::TableSetupColumn("Source Type");
+        ImGui::TableHeadersRow();
         for (const auto& source : sources) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::TextUnformatted(source.name.c_str());
+            if (ImGui::Button("Start")) {
+                if (m_source) {
+                    m_source->Stop();
+                }
+                m_source = std::make_unique<NDISource>(
+                    *m_openclDeviceProvider,
+                    source.AsNDIlibSource());
+                if (m_source->Start() != ErrorCode::None) {
+                    std::println("Failed to start NDI source: {}", m_source->GetName());
+                    m_source.reset();
+                }
+            }
             ImGui::TableSetColumnIndex(1);
+            ImGui::TextUnformatted(source.name.c_str());
+            ImGui::TableSetColumnIndex(2);
             ImGui::TextUnformatted(source.urlAddress.c_str());
         }
         ImGui::EndTable();
     }
+    ImGui::End();
+}
+
+void Application::UI_ActiveSource() noexcept {
+    auto& sourceRenderer = m_source->GetRenderer();
+    if (sourceRenderer.needsResizeFlag_mainThread) {
+        sourceRenderer.ResizeGLTextures();
+    }
+
+    auto sourceTextures = sourceRenderer.GetTargetTextures();
+
+    auto& sourcePreview = sourceTextures->sourcePreview;
+
+    ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGuiImageRender(sourcePreview, ScaleBehavior::ScaleToFit);
+    ImGui::End();
+
+    auto& wfLuma = sourceTextures->wfLuma;
+
+    ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGuiImageRender(wfLuma, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGui::End();
+
+    auto& wfRgb = sourceTextures->wfRGB;
+
+    ImGui::Begin(wfRgb.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGuiImageRender(wfRgb, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGui::End();
+
+    auto& wfRgbParade = sourceTextures->wfRGBParade;
+
+    ImGui::Begin(wfRgbParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGuiImageRender(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGui::End();
+
+    auto& wfRgbBlacks = sourceTextures->wfRGBBlacks;
+
+    ImGui::Begin(wfRgbBlacks.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGuiImageRender(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGui::End();
+
+    auto& wfYuvParade = sourceTextures->wfYUVParade;
+
+    ImGui::Begin(wfYuvParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGuiImageRender(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGui::End();
+
+    auto& scUV = sourceTextures->scUV;
+    ImGui::Begin(scUV.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGuiImageRender(scUV, ScaleBehavior::ScaleToFit);
+    ImGui::End();
+
+    auto& scXYZ = sourceTextures->scXYZ;
+    ImGui::Begin(scXYZ.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGuiImageRender(scXYZ, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGui::End();
+
+    auto& scDia = sourceTextures->scDia;
+    ImGui::Begin(scDia.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGuiImageRender(scDia, ScaleBehavior::ScaleToFit);
+    ImGui::End();
+}
+
+void Application::UI_SourceStats() noexcept {
+    const auto& sourceStats = m_source->GetStats();
+    ImGui::Begin("Source Stats", nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGui::Text("Name: %s", m_source->GetName().data());
+    ImGui::Text("Dimensions: %ux%u", sourceStats.sourceDims.width, sourceStats.sourceDims.height);
+    ImGui::Text("FPS: %.2f", sourceStats.sourceFPS);
+    ImGui::Text(std::format("Format: {}", sourceStats.sourceFormat).c_str());
+    ImGui::Text("Max Render FPS: %.2f", sourceStats.maxRenderFPS);
+    ImGui::Text("Render Duration: %.4f ms", sourceStats.renderDurationMS);
+    ImGui::Text("Avg Max Render FPS: %.2f", sourceStats.avgMaxRenderFPS);
+    ImGui::Text("Avg Render Duration: %.4f ms", sourceStats.avgRenderDurationMS);
+    ImGui::End();
+}
+
+void Application::UI_RenderSettings() noexcept {
+    auto& renderSettings = m_source->GetRenderSettings();
+
+    ImGui::Begin("Render Settings", nullptr, ImGuiWindowFlags_NoCollapse);
+    // Dropdown for color space
+    if (ImGui::BeginCombo(
+            "Color Space",
+            SourceColorSpaceToString(renderSettings.colorSpace).data())) {
+        for (int i = 0; i < static_cast<int>(SourceColorSpace::max); ++i) {
+            const auto colorSpace = static_cast<SourceColorSpace>(i);
+            if (ImGui::Selectable(SourceColorSpaceToString(colorSpace).data(), renderSettings.colorSpace == colorSpace)) {
+                renderSettings.colorSpace = colorSpace;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    // Dropdown for YUV range
+    if (ImGui::BeginCombo(
+            "YUV Range",
+            SourceYUVRangeToString(renderSettings.yuvRange).data())) {
+        for (int i = 0; i < static_cast<int>(SourceYUVRange::max); ++i) {
+            const auto yuvRange = static_cast<SourceYUVRange>(i);
+            if (ImGui::Selectable(SourceYUVRangeToString(yuvRange).data(), renderSettings.yuvRange == yuvRange)) {
+                renderSettings.yuvRange = yuvRange;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
     ImGui::End();
 }
 

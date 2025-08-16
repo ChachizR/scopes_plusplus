@@ -1,3 +1,4 @@
+#define CS_LINEAR_RGB 0
 #define CS_BT601_525 1
 #define CS_BT601_625 2
 #define CS_BT709 3
@@ -6,8 +7,10 @@
 
 typedef int colorspace_t;
 
+#define YUV_RANGE_LIMITED 0
 #define YUV_RANGE_FULL 1
-#define YUV_RANGE_LIMITED 2
+
+typedef int yuv_range_t;
 
 inline float3 mul3x3v(constant float* m, float3 v) {
     return (float3)(m[0] * v.x + m[1] * v.y + m[2] * v.z,
@@ -145,6 +148,24 @@ inline float3 rgb_709_to_YUV_709_Limited(float3 rgb) {
     return mul3x3v(M_RGB_709_to_YUV_709_LIMITED, rgb) + YUV_LIMITED_OFFSET;
 }
 
+constant float3 YUV_FULL_OFFSET = (float3)(0.0f, 0.5f, 0.5f);
+
+constant float M_RGB_709_to_YUV_709_FULL[9] = {
+    0.21259999f, 0.71520001f, 0.07220000f,
+    -0.11457211f, -0.38542789f, 0.50000000f,
+    0.50000000f, -0.45415291f, -0.04584709f};
+
+inline float3 rgb_709_to_YUV_709_Full(float3 rgb) {
+    return mul3x3v(M_RGB_709_to_YUV_709_FULL, rgb) + YUV_FULL_OFFSET;
+}
+
+inline float3 rgb_709_to_YUV_709(float3 rgb, yuv_range_t yuv_range) {
+    if (yuv_range == YUV_RANGE_FULL)
+        return rgb_709_to_YUV_709_Full(rgb);
+    else
+        return rgb_709_to_YUV_709_Limited(rgb);
+}
+
 // YUV -> RGB
 
 constant float M_YUV_601_LIMITED_to_RGB_601[9] = {
@@ -195,8 +216,6 @@ inline float3 yuv_limited_to_RGB(float3 yuv, colorspace_t cs) {
     }
 }
 
-constant float3 YUV_FULL_OFFSET = (float3)(0.0f, 0.5f, 0.5f);
-
 constant float M_YUV_601_FULL_to_RGB_601[9] = {
     1.00000000f, 0.00000000f, 1.40199995f,
     1.00000000f, -0.34413630f, -0.71413630f,
@@ -239,4 +258,11 @@ inline float3 yuv_full_to_RGB(float3 yuv, colorspace_t cs) {
     default:
         return yuv_709_Full_to_RGB_709(yuv);
     }
+}
+
+inline float3 yuv_to_RGB(float3 yuv, colorspace_t cs, yuv_range_t yuv_range) {
+    if (yuv_range == YUV_RANGE_FULL)
+        return yuv_full_to_RGB(yuv, cs);
+    else
+        return yuv_limited_to_RGB(yuv, cs);
 }

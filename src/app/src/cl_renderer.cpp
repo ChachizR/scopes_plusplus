@@ -139,7 +139,8 @@ void OpenCLRenderer::ExecutePipeline(
     const uint8_t* sourceData,
     Dims2D         sourceDims,
     SourceFormat   sourceFormat,
-    uint32_t       lineStrideBytes) {
+    uint32_t       lineStrideBytes,
+    RenderSettings renderSettings) {
 
     if (!sourceData) [[unlikely]]
         return;
@@ -192,7 +193,8 @@ void OpenCLRenderer::ExecutePipeline(
     res += convert_kernel.setArg<cl_uint>(5, m_sourceDims.width);
     res += convert_kernel.setArg<cl_uint>(6, m_sourceDims.height);
     res += convert_kernel.setArg<cl_uint>(7, lineStrideBytes);
-    res += convert_kernel.setArg<cl_int>(8, static_cast<cl_int>(ColorSpace::BT709));
+    res += convert_kernel.setArg<cl_int>(8, static_cast<cl_int>(renderSettings.colorSpace));
+    res += convert_kernel.setArg<cl_int>(9, static_cast<cl_int>(renderSettings.yuvRange));
 
     CHECK_CL_ERROR_RET(res, "Failed to set OpenCL convert kernel arguments");
 
@@ -232,7 +234,7 @@ void OpenCLRenderer::ExecutePipeline(
     res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(5, m_targetTextures->wfRGBBlacks.clImageGL);
     res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(6, m_targetTextures->wfYUVParade.clImageGL);
     res += m_kernels.createWaveformImages.setArg<cl_uint>(7, sourceDims.width);
-    res += m_kernels.createWaveformImages.setArg<cl_int>(8, static_cast<cl_int>(ColorSpace::BT709));
+    res += m_kernels.createWaveformImages.setArg<cl_int>(8, static_cast<cl_int>(renderSettings.colorSpace));
     res += m_kernels.createWaveformImages.setArg<cl_float>(9, brightness);
 
     CHECK_CL_ERROR_RET(res, "Failed to set OpenCL create waveform images kernel arguments");
@@ -258,7 +260,7 @@ void OpenCLRenderer::ExecutePipeline(
     res += m_kernels.accumulateXYZScope.setArg<cl_uint>(3, m_sourceDims.height);
     res += m_kernels.accumulateXYZScope.setArg<cl_uchar>(4, 0);
     res += m_kernels.accumulateXYZScope.setArg<CLRect2D>(5, CLRect2D{0, 0, 0, 0});
-    res += m_kernels.accumulateXYZScope.setArg<cl_int>(6, static_cast<cl_int>(ColorSpace::BT709));
+    res += m_kernels.accumulateXYZScope.setArg<cl_int>(6, static_cast<cl_int>(renderSettings.colorSpace));
 
     CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate XYZ scope kernel arguments");
 

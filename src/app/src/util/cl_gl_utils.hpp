@@ -11,14 +11,14 @@ struct CLGLTextureRGBA {
 
     Dims2D size;
 
-    CLGLTextureRGBA(Dims2D size, const cl::Context& context);
-    CLGLTextureRGBA(std::string_view description, Dims2D size, const cl::Context& context);
+    CLGLTextureRGBA(Dims2D size, const cl::Context& context, std::string_view desc = ""sv);
+    CLGLTextureRGBA(std::string_view desc, Dims2D size, const cl::Context& context);
 
     ~CLGLTextureRGBA() {
         if (glTextureID == 0)
             return;
         glDeleteTextures(1, &glTextureID);
-        std::println("Deleted OpenGL texture: {}", glTextureID);
+        std::println("Deleted OpenGL texture {} '{}'\t ", glTextureID, description);
     }
 
     CLGLTextureRGBA(const CLGLTextureRGBA&)            = delete;

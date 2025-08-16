@@ -50,10 +50,14 @@ private:
 
     // UI
 
-    void UI_Main() const noexcept;
+    void UI_Main() noexcept;
     void UI_MainMenuBar() const noexcept;
     void UI_Settings() const noexcept;
-    void UI_NDISources() const noexcept;
+    void UI_NDISources() noexcept;
+    void UI_ActiveSource() noexcept;
+    void UI_SourceStats() noexcept;
+    void UI_RenderSettings() noexcept;
+    
 };
 
 } // namespace scpp

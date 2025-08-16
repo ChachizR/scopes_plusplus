@@ -20,8 +20,9 @@ void DeleteGLRGBATexture(GLuint& textureID) {
     }
 }
 
-CLGLTextureRGBA::CLGLTextureRGBA(Dims2D size, const cl::Context& context)
-    : size{size} {
+CLGLTextureRGBA::CLGLTextureRGBA(Dims2D size, const cl::Context& context, std::string_view desc)
+    : size{size}
+    , description{desc} {
     CreateNewGLRGBATexture(glTextureID, size);
 
     cl_int res = CL_SUCCESS;
@@ -38,13 +39,11 @@ CLGLTextureRGBA::CLGLTextureRGBA(Dims2D size, const cl::Context& context)
         std::println("Failed to create OpenCL ImageGL: {}", res);
     }
 
-    std::println("Created OpenCL texture {}: {} with size {}x{}", glTextureID, description, size.width, size.height);
+    std::println("Created OpenCL texture {} '{}'\t with size {}x{}", glTextureID, description, size.width, size.height);
 }
 
-CLGLTextureRGBA::CLGLTextureRGBA(std::string_view description, Dims2D size, const cl::Context& context)
-    : CLGLTextureRGBA(size, context) {
-    this->description = description;
-}
+CLGLTextureRGBA::CLGLTextureRGBA(std::string_view desc, Dims2D size, const cl::Context& context)
+    : CLGLTextureRGBA(size, context, desc) {}
 
 CLGLTextureRGBA::CLGLTextureRGBA(CLGLTextureRGBA&& rhs) noexcept
     : description{rhs.description}

@@ -36,6 +36,7 @@ protected:
     std::thread      m_thread;
     OpenCLRenderer   m_renderer;
     VideoSourceStats m_stats;
+    RenderSettings   m_renderSettings;
 
     VideoSource(const OpenCLDeviceProvider& deviceProviderRef)
         : m_renderer{deviceProviderRef} {}
@@ -74,6 +75,9 @@ public:
 
     [[nodiscard]]
     auto GetStats() const noexcept -> const VideoSourceStats& { return m_stats; }
+
+    [[nodiscard]]
+    auto GetRenderSettings() noexcept -> RenderSettings& { return m_renderSettings; }
 };
 
 } // namespace scpp

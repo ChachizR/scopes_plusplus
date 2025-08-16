@@ -76,16 +76,17 @@ auto NDISource::HandleVideoFrame(const NDIlib_video_frame_v2_t& videoFrame) noex
         videoFrame.p_data,
         Dims2D{(uint32_t)videoFrame.xres, (uint32_t)videoFrame.yres},
         sourceFormat,
-        videoFrame.line_stride_in_bytes);
+        videoFrame.line_stride_in_bytes,
+        m_renderSettings);
 
     const auto endTime = std::chrono::steady_clock::now();
 
     const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
 
-    m_stats.sourceDims     = Dims2D{static_cast<uint32_t>(videoFrame.xres),
+    m_stats.sourceDims   = Dims2D{static_cast<uint32_t>(videoFrame.xres),
                                 static_cast<uint32_t>(videoFrame.yres)};
-    m_stats.sourceFormat   = sourceFormat;
-    m_stats.sourceFPS      = static_cast<float>(videoFrame.frame_rate_N) / static_cast<float>(videoFrame.frame_rate_D);
+    m_stats.sourceFormat = sourceFormat;
+    m_stats.sourceFPS    = static_cast<float>(videoFrame.frame_rate_N) / static_cast<float>(videoFrame.frame_rate_D);
 
     m_stats.SetRenderTimings(duration);
 
