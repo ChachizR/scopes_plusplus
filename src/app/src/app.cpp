@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "imgui_util.hpp"
 
 namespace scpp {
 Application::Application() {
@@ -201,13 +202,13 @@ void Application::UI_NDISources() noexcept {
     ImGui::Begin("NDI Sources");
     if (ImGui::BeginTable("NDI Sources Table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("Select", ImGuiTableColumnFlags_::ImGuiTableColumnFlags_WidthFixed);
-        ImGui::TableSetupColumn("Source Name");
-        ImGui::TableSetupColumn("Source Type");
+        ImGui::TableSetupColumn("Name");
+        ImGui::TableSetupColumn("URL");
         ImGui::TableHeadersRow();
         for (const auto& source : sources) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            if (ImGui::Button("Start")) {
+            if (ImGui::Button(std::format("Select##{}", source.name).c_str())) {
                 if (m_source) {
                     m_source->Stop();
                 }
@@ -240,52 +241,53 @@ void Application::UI_ActiveSource() noexcept {
     auto& sourcePreview = sourceTextures->sourcePreview;
 
     ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiImageRender(sourcePreview, ScaleBehavior::ScaleToFit);
+    ImGuiUtilImageRender(sourcePreview, ScaleBehavior::ScaleToFit);
     ImGui::End();
 
     auto& wfLuma = sourceTextures->wfLuma;
 
     ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiImageRender(wfLuma, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGuiUtilRenderLumaWF(wfLuma, m_source->GetRenderSettings().yuvRange,
+                          ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& wfRgb = sourceTextures->wfRGB;
 
     ImGui::Begin(wfRgb.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiImageRender(wfRgb, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGuiUtilRenderRGBWF(wfRgb, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& wfRgbParade = sourceTextures->wfRGBParade;
 
     ImGui::Begin(wfRgbParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiImageRender(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGuiUtilImageRender(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& wfRgbBlacks = sourceTextures->wfRGBBlacks;
 
     ImGui::Begin(wfRgbBlacks.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiImageRender(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGuiUtilImageRender(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& wfYuvParade = sourceTextures->wfYUVParade;
 
     ImGui::Begin(wfYuvParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiImageRender(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGuiUtilImageRender(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& scUV = sourceTextures->scUV;
     ImGui::Begin(scUV.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiImageRender(scUV, ScaleBehavior::ScaleToFit);
+    ImGuiUtilImageRender(scUV, ScaleBehavior::ScaleToFit);
     ImGui::End();
 
     auto& scXYZ = sourceTextures->scXYZ;
     ImGui::Begin(scXYZ.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiImageRender(scXYZ, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGuiUtilRenderCIE(scXYZ, m_source->GetRenderSettings().colorSpace, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& scDia = sourceTextures->scDia;
     ImGui::Begin(scDia.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiImageRender(scDia, ScaleBehavior::ScaleToFit);
+    ImGuiUtilImageRender(scDia, ScaleBehavior::ScaleToFit);
     ImGui::End();
 }
 

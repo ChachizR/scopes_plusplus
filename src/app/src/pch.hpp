@@ -37,6 +37,7 @@ using namespace std::literals::string_view_literals;
 
 #include <vector>
 #include <array>
+#include <unordered_map>
 
 #include <ranges>
 #include <algorithm>

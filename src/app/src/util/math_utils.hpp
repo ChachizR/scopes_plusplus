@@ -15,8 +15,12 @@ struct Dims2D {
         return width == other.width && height == other.height;
     }
 
-    constexpr uint64_t Area() const noexcept {
+    constexpr auto Area() const noexcept -> uint64_t {
         return static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+    }
+
+    constexpr auto ToImVec2() const noexcept -> ImVec2 {
+        return ImVec2(static_cast<float>(width), static_cast<float>(height));
     }
 };
 
@@ -43,5 +47,56 @@ struct CLRect2D {
     cl_uint height;
 };
 #pragma pack(pop)
+
+template<class T>
+concept Floating = std::is_floating_point_v<T>;
+
+template<Floating T>
+constexpr T pow2i(long long n) {
+    // Compute 2^n using exponentiation by squaring (works for negative n too).
+    T                  result = T(1);
+    T                  base   = (n >= 0) ? T(2) : T(0.5);
+    unsigned long long m      = (n >= 0) ? static_cast<unsigned long long>(n)
+                                         : static_cast<unsigned long long>(-n);
+    while (m) {
+        if (m & 1ULL)
+            result *= base;
+        base *= base;
+        m >>= 1ULL;
+    }
+    return result;
+}
+
+template<Floating T>
+constexpr T exp_constexpr(T x) {
+    // High-precision ln(2) literal, converted to T.
+    const T LN2      = T(0.693147180559945309417232121458176568L);
+    const T HALF_LN2 = LN2 * T(0.5);
+
+    // Range reduction: x = n*ln(2) + r, with r in [-ln2/2, ln2/2].
+    long long n = static_cast<long long>(x / LN2); // trunc toward 0
+    T         r = x - T(n) * LN2;
+    if (r > HALF_LN2) {
+        ++n;
+        r -= LN2;
+    }
+    if (r < -HALF_LN2) {
+        --n;
+        r += LN2;
+    }
+
+    // e^r via Taylor series sum_{k=0..N} r^k / k!, r is small so this converges fast.
+    // N=20 is already ~1e-14 relative error for double on this interval.
+    constexpr int N    = 20;
+    T             term = T(1);
+    T             sum  = T(1);
+    for (int k = 1; k <= N; ++k) {
+        term *= r / T(k);
+        sum += term;
+    }
+
+    // Scale back by 2^n.
+    return sum * pow2i<T>(n);
+}
 
 }
