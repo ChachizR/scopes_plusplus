@@ -240,6 +240,8 @@ void Application::UI_ActiveSource() noexcept {
 
     auto& sourcePreview = sourceTextures->sourcePreview;
 
+    const auto& renderSettings = m_source->GetRenderSettings();
+
     ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilImageRender(sourcePreview, ScaleBehavior::ScaleToFit);
     ImGui::End();
@@ -247,7 +249,7 @@ void Application::UI_ActiveSource() noexcept {
     auto& wfLuma = sourceTextures->wfLuma;
 
     ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilRenderLumaWF(wfLuma, m_source->GetRenderSettings().yuvRange,
+    ImGuiUtilRenderLumaWF(wfLuma, renderSettings.yuvRange,
                           ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
@@ -277,17 +279,17 @@ void Application::UI_ActiveSource() noexcept {
 
     auto& scUV = sourceTextures->scUV;
     ImGui::Begin(scUV.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilImageRender(scUV, ScaleBehavior::ScaleToFit);
+    ImGuiUtilRenderUV(scUV, ScaleBehavior::ScaleToFit);
     ImGui::End();
 
     auto& scXYZ = sourceTextures->scXYZ;
     ImGui::Begin(scXYZ.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilRenderCIE(scXYZ, m_source->GetRenderSettings().colorSpace, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGuiUtilRenderCIE(scXYZ, renderSettings.colorSpace, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& scDia = sourceTextures->scDia;
     ImGui::Begin(scDia.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilImageRender(scDia, ScaleBehavior::ScaleToFit);
+    ImGuiUtilRenderDia(scDia, ScaleBehavior::ScaleToFit);
     ImGui::End();
 }
 

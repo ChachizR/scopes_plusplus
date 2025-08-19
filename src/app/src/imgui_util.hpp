@@ -68,8 +68,10 @@ static inline void ImGuiUtilImageRender(
     ImGui::ImageWithBg(imTextureID, imgSize, uv0, uv1, c_bgColor);
 }
 
-static constexpr ImU32 c_lineColor     = IM_COL32(255, 255, 255, 128);
-static constexpr float c_lineThickness = 1.5f;
+static constexpr ImU32 c_lineColor      = IM_COL32(255, 255, 255, 128);
+static constexpr ImU32 c_lineColorHalf  = IM_COL32(255, 255, 255, 64);
+static constexpr ImU32 c_lineColorQuart = IM_COL32(255, 255, 255, 32);
+static constexpr float c_lineThickness  = 1.5f;
 
 static inline void ImGuiUtilRenderLumaWF(
     const CLGLTextureRGBA& texture,
@@ -179,7 +181,7 @@ static inline consteval auto GetCIELocus() -> std::array<ImVec2, 100> {
     float lStart = 440.f;
     float lEnd   = 650.f;
     for (int i = 0; i < 100; i++) {
-        float l = lStart + (lEnd - lStart) * (i / 99.f);
+        float l    = lStart + (lEnd - lStart) * (i / 99.f);
         float xVal = x(l);
         float yVal = y(l);
         float zVal = z(l);
@@ -212,7 +214,7 @@ static inline void ImGuiUtilRenderCIE(
     for (int i = 0; i <= 10; i++) {
         float x     = topLeft.x + (i / 10.f) * imgSize.x;
         float y     = topLeft.y + (i / 10.f) * imgSize.y;
-        ImU32 color = (i % 2 == 0) ? IM_COL32(255, 255, 255, 128) : IM_COL32(255, 255, 255, 64);
+        ImU32 color = (i % 2 == 0) ? c_lineColorHalf : c_lineColorQuart;
         drawList->AddLine(ImVec2(x, topLeft.y), ImVec2(x, topLeft.y + imgSize.y), color, c_lineThickness);
         drawList->AddLine(ImVec2(topLeft.x, y), ImVec2(topLeft.x + imgSize.x, y), color, c_lineThickness);
     }
@@ -222,10 +224,11 @@ static inline void ImGuiUtilRenderCIE(
     for (const auto colorSpace : c_cieTriangleColorspaces) {
         auto primaries = GetCIEPrimaries(colorSpace);
 
-        ImVec2 p1    = ImVec2(topLeft.x + primaries[0].x * imgSize.x, topLeft.y + (1.f - primaries[0].y) * imgSize.y);
-        ImVec2 p2    = ImVec2(topLeft.x + primaries[1].x * imgSize.x, topLeft.y + (1.f - primaries[1].y) * imgSize.y);
-        ImVec2 p3    = ImVec2(topLeft.x + primaries[2].x * imgSize.x, topLeft.y + (1.f - primaries[2].y) * imgSize.y);
-        ImU32  color = (colorSpace == selectedColorSpace) ? IM_COL32(255, 255, 255, 192) : IM_COL32(255, 255, 255, 64);
+        ImVec2 p1 = ImVec2(topLeft.x + primaries[0].x * imgSize.x, topLeft.y + (1.f - primaries[0].y) * imgSize.y);
+        ImVec2 p2 = ImVec2(topLeft.x + primaries[1].x * imgSize.x, topLeft.y + (1.f - primaries[1].y) * imgSize.y);
+        ImVec2 p3 = ImVec2(topLeft.x + primaries[2].x * imgSize.x, topLeft.y + (1.f - primaries[2].y) * imgSize.y);
+
+        ImU32 color = (colorSpace == selectedColorSpace) ? c_lineColor : c_lineColorHalf;
         drawList->AddTriangle(p1, p2, p3, color);
     }
 
@@ -234,8 +237,187 @@ static inline void ImGuiUtilRenderCIE(
     for (size_t i = 0; i < c_cieLocus.size() - 1; i++) {
         ImVec2 p1 = ImVec2(topLeft.x + c_cieLocus[i].x * imgSize.x, topLeft.y + (1.f - c_cieLocus[i].y) * imgSize.y);
         ImVec2 p2 = ImVec2(topLeft.x + c_cieLocus[i + 1].x * imgSize.x, topLeft.y + (1.f - c_cieLocus[i + 1].y) * imgSize.y);
-        drawList->AddLine(p1, p2, IM_COL32(255, 255, 255, 64), c_lineThickness);
+        drawList->AddLine(p1, p2, c_lineColorHalf, c_lineThickness);
     }
 }
 
+static constexpr auto c_diaVerts = std::to_array<ImVec2>({
+    {0.5f, 0.f  },
+    {1.f,  0.25f},
+    {0.5f, 0.5f },
+    {0.f,  0.25f},
+    {0.5f, 0.f  },
+    {0.5f, 0.5f },
+    {1.f,  0.75f},
+    {0.5f, 1.f  },
+    {0.f,  0.75f},
+    {0.5f, 0.5f },
+    {0.5f, 1.f  }
+});
+
+static constexpr auto ImGuiUtilRelPosToImagePos(ImVec2 relPos, ImVec2 imgSize, ImVec2 offset = {0.f, 0.f}) -> ImVec2 {
+    return ImVec2(
+        offset.x + relPos.x * imgSize.x,
+        offset.y + (1.f - relPos.y) * imgSize.y);
+}
+
+static inline void ImGuiUtilRenderDia(
+    const CLGLTextureRGBA& texture,
+    ScaleBehavior          scaleBehavior = ScaleBehavior::OnlyScaleDown,
+    FlipBehavior           flipBehavior  = FlipBehavior::DoNotFlip) {
+    const auto imgSize     = ImGuiUtilGetImageSize(texture.size.ToImVec2(), scaleBehavior);
+    const auto [uv0, uv1]  = ImGuiUtilGetUVs(flipBehavior);
+    const auto imTextureID = static_cast<ImTextureID>(texture.glTextureID);
+    const auto topLeft     = ImGui::GetCursorScreenPos();
+
+    ImGui::ImageWithBg(imTextureID, imgSize, uv0, uv1, c_bgColor);
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+    for (size_t i = 0; i < c_diaVerts.size() - 1; i++) {
+        auto p1 = ImGuiUtilRelPosToImagePos(c_diaVerts[i], imgSize, topLeft);
+        auto p2 = ImGuiUtilRelPosToImagePos(c_diaVerts[i + 1], imgSize, topLeft);
+        drawList->AddLine(p1, p2, c_lineColor, c_lineThickness);
+    }
+}
+
+static constexpr auto c_offsetR2YFull = glm::vec3(0.f, 0.5f, 0.5f);
+
+static constexpr auto c_mR2Y601_Full = glm::mat3x3{
+    0.29899999f, -0.16873589f, 0.50000000f,
+    0.58700001f, -0.33126411f, -0.41868758f,
+    0.11400000f, 0.50000000f, -0.08131241f};
+
+static constexpr auto c_mR2Y709_Full = glm::mat3x3{
+    0.21259999f, -0.11457211f, 0.50000000f,
+    0.71520001f, -0.38542789f, -0.45415291f,
+    0.07220000f, 0.50000000f, -0.04584709f};
+
+static constexpr auto c_mR2Y2020_Full = glm::mat3x3{
+    0.26269999f, -0.13963006f, 0.50000000f,
+    0.67799997f, -0.36036995f, -0.45978570f,
+    0.05930000f, 0.50000000f, -0.04021430f};
+
+static constexpr auto c_offsetR2YLimited = glm::vec3(0.0627451f, 0.5019608f, 0.5019608f);
+
+static constexpr auto c_mR2Y601_Limited = glm::mat3x3{
+    0.25678822f, -0.14491436f, 0.42941177f,
+    0.51563925f, -0.29099280f, -0.36778831f,
+    0.10014118f, 0.43921569f, -0.07142738f};
+
+static constexpr auto c_mR2Y709_Limited = glm::mat3x3{
+    0.18258588f, -0.09839723f, 0.42941177f,
+    0.62825412f, -0.33857197f, -0.39894217f,
+    0.06342275f, 0.43921569f, -0.04027352f};
+
+static constexpr auto c_mR2Y2020_Limited = glm::mat3x3{
+    0.22561294f, -0.11991759f, 0.42941177f,
+    0.59557647f, -0.31656027f, -0.40389019f,
+    0.05209098f, 0.43921569f, -0.03532550f};
+
+static constexpr auto c_mR2R_709_to_601_525 = glm::mat3x3{
+    0.93954194f, 0.05018133f, 0.01027656f,
+    0.01777223f, 0.96579289f, 0.01643492f,
+    -0.00162160f, -0.00436975f, 1.00599146f};
+
+static constexpr auto c_mR2R_709_to_601_625 = glm::mat3x3{
+    1.04404318f, -0.04404324f, 0.00000000f,
+    0.00000001f, 1.00000000f, -0.00000001f,
+    -0.00000000f, 0.01179338f, 0.98820668f};
+
+static constexpr auto c_mR2R_709_to_2020 = glm::mat3x3{
+    1.66049099f, -0.58764112f, -0.07284993f,
+    -0.12455052f, 1.13289988f, -0.00834943f,
+    -0.01815076f, -0.10057890f, 1.11872983f};
+
+// static inline constexpr auto ImGuiUtilRGBtoYUV(glm::vec3 rgb, SourceColorSpace colorSpace, SourceYUVRange yuvRange) -> glm::vec3 {
+//     switch (colorSpace) {
+//     case SourceColorSpace::BT601_525:
+//         rgb = c_mR2R_709_to_601_525 * rgb;
+//     case SourceColorSpace::BT601_625:
+//         rgb = c_mR2R_709_to_601_625 * rgb;
+//         if (yuvRange == SourceYUVRange::Full) {
+//             return c_mR2Y601_Full * rgb + c_offsetR2YFull;
+//         } else {
+//             return c_mR2Y601_Limited * rgb + c_offsetR2YLimited;
+//         }
+//     case SourceColorSpace::BT709:
+//     case SourceColorSpace::SRGB:
+//
+//         if (yuvRange == SourceYUVRange::Full) {
+//             return c_mR2Y709_Full * rgb + c_offsetR2YFull;
+//         } else {
+//             return c_mR2Y709_Limited * rgb + c_offsetR2YLimited;
+//         }
+//     case SourceColorSpace::BT2020:
+//         rgb = c_mR2R_709_to_2020 * rgb;
+//         if (yuvRange == SourceYUVRange::Full) {
+//             return c_mR2Y2020_Full * rgb + c_offsetR2YFull;
+//         } else {
+//             return c_mR2Y2020_Limited * rgb + c_offsetR2YLimited;
+//         }
+//     }
+//
+//     return glm::vec3(0.f, 0.f, 0.f); // Fallback
+// }
+
+static constexpr auto c_uvVectorColors = std::to_array<glm::vec3>({
+    {1.f, 0.f, 0.f},
+    {1.f, 1.f, 0.f},
+    {0.f, 1.f, 0.f},
+    {0.f, 1.f, 1.f},
+    {0.f, 0.f, 1.f},
+    {1.f, 0.f, 1.f},
+    {1.f, 0.f, 0.f}
+});
+
+static inline constexpr auto ConstexprMatMul3x3(const glm::mat3x3& m, glm::vec3 v) -> glm::vec3 {
+    return glm::vec3(
+        m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z,
+        m[0][1] * v.x + m[1][1] * v.y + m[2][1] * v.z,
+        m[0][2] * v.x + m[1][2] * v.y + m[2][2] * v.z);
+}
+
+static consteval auto GetUVVectors() -> std::array < glm::vec2, c_uvVectorColors.size()> {
+    std::array<glm::vec2, c_uvVectorColors.size()> uvVectors;
+    for (size_t i = 0; i < c_uvVectorColors.size(); i++) {
+        const auto& color = c_uvVectorColors[i];
+        const auto  yuv709 = ConstexprMatMul3x3(c_mR2Y709_Limited, color) + c_offsetR2YLimited;
+        uvVectors[i]       = glm::vec2(yuv709.y, yuv709.z);
+    }
+    return uvVectors;
+}
+
+static constexpr auto c_uvVectors = GetUVVectors();
+
+static constexpr auto ImGuiUtilGLMVec3ToImU32(glm::vec3 vec) -> ImU32 {
+    return IM_COL32(static_cast<ImU8>(vec.x * 255.f), static_cast<ImU8>(vec.y * 255.f), static_cast<ImU8>(vec.z * 255.f), 255);
+}
+
+static inline void ImGuiUtilRenderUV(
+    const CLGLTextureRGBA& texture,
+    ScaleBehavior          scaleBehavior = ScaleBehavior::OnlyScaleDown,
+    FlipBehavior           flipBehavior  = FlipBehavior::DoNotFlip) {
+    const auto imgSize     = ImGuiUtilGetImageSize(texture.size.ToImVec2(), scaleBehavior);
+    const auto [uv0, uv1]  = ImGuiUtilGetUVs(flipBehavior);
+    const auto imTextureID = static_cast<ImTextureID>(texture.glTextureID);
+    const auto topLeft     = ImGui::GetCursorScreenPos();
+
+    ImGui::ImageWithBg(imTextureID, imgSize, uv0, uv1, c_bgColor);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+    const auto p0 = ImGuiUtilRelPosToImagePos(ImVec2(.5f, .5f), imgSize, topLeft);
+
+    for (size_t i = 0; i < c_uvVectors.size() - 1; i++) {
+        const auto uva = c_uvVectors[i];
+        const auto uvb = c_uvVectors[i + 1];
+
+        const auto pa = ImGuiUtilRelPosToImagePos(ImVec2(uva.x, uva.y), imgSize, topLeft);
+        const auto pb = ImGuiUtilRelPosToImagePos(ImVec2(uvb.x, uvb.y), imgSize, topLeft);
+
+        drawList->AddLine(pa, pb, c_lineColor, c_lineThickness);
+
+        drawList->AddLine(p0, pa, c_lineColor, c_lineThickness);
+    }
+}
 } // namespace scpp

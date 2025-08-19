@@ -59,6 +59,12 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCL_LIBRARIES}
 )
 
+# ## GLM
+target_include_directories(${PROJECT_NAME}
+    PRIVATE
+    $<TARGET_PROPERTY:glm,INTERFACE_INCLUDE_DIRECTORIES>
+)
+
 # ## NDI
 set(NDI_SDK_DIR "${CMAKE_SOURCE_DIR}/ext/ndi")
 

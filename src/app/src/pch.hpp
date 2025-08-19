@@ -23,6 +23,8 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3native.h>
 
+#include <glm/glm.hpp> 
+
 #include "Processing.NDI.Advanced.h"
 
 #pragma warning(pop)
