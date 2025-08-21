@@ -14,6 +14,8 @@ Application::Application() {
         throw std::runtime_error("ImGui initialization failed");
     }
 
+    SetImGuiStyle();
+
     m_openclDeviceProvider = std::make_unique<OpenCLDeviceProvider>();
 
     if (!m_openclDeviceProvider->IsInitialized()) {
@@ -70,8 +72,9 @@ auto Application::InitImGui() -> bool {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport / Platform Windows
-    io.ConfigViewportsNoDecoration  = false;
-    io.ConfigViewportsNoTaskBarIcon = false;
+    io.ConfigViewportsNoDecoration       = false;
+    io.ConfigViewportsNoTaskBarIcon      = false;
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -93,6 +96,112 @@ auto Application::InitImGui() -> bool {
     ImGui_ImplOpenGL3_Init(m_glslVersion.data());
 
     return true;
+}
+
+void Application::SetImGuiStyle() {
+    // ImGuiIO& io = ImGui::GetIO();
+    ImGuiStyle& style = ImGui::GetStyle();
+
+    style.WindowPadding    = ImVec2(8, 8); // padding within a window
+    style.FramePadding     = ImVec2(8, 4); // space around text in buttons, inputs, etc.
+    style.ItemSpacing      = ImVec2(8, 6); // space between items in a window
+    style.ItemInnerSpacing = ImVec2(8, 8); // space between items in a same line
+    style.IndentSpacing    = 24.f;
+    style.ScrollbarSize    = 16.f; // width of the scrollbar
+    style.GrabMinSize      = 12.f;
+
+    style.WindowBorderSize = 0.f;
+    style.ChildBorderSize  = 0.f;
+    style.FrameBorderSize  = 0.f;
+    style.PopupBorderSize  = 0.f;
+    style.TabBorderSize    = 0.f;
+    style.TabBarBorderSize = 1.f;
+
+    style.WindowRounding    = 8.0f;
+    style.ChildRounding     = 8.0f;
+    style.FrameRounding     = 6.0f;
+    style.PopupRounding     = 6.0f;
+    style.ScrollbarRounding = 6.0f;
+    style.GrabRounding      = 6.0f;
+    style.TabRounding       = 6.0f;
+
+    style.CellPadding = ImVec2(4, 4);
+
+    style.WindowTitleAlign         = ImVec2(0.5f, 0.5f);
+    style.WindowMenuButtonPosition = ImGuiDir_Right;
+
+    style.DockingSeparatorSize = 1.f;
+
+    auto rgba = [](float r, float g, float b, float a) { return ImVec4(r / 255.f, g / 255.f, b / 255.f, a); };
+
+    auto withAlpha = [](ImVec4 col, float a) { return ImVec4{col.x, col.y, col.z, a}; };
+
+    constexpr static auto c_bg0 = rgba(8, 8, 8, 1.f);
+    constexpr static auto c_bg1 = rgba(16, 16, 16, 1.f);
+    constexpr static auto c_bg2 = rgba(15, 38, 34, 1.f);
+
+    constexpr static auto c_hl0 = rgba(64, 245, 205, 1.f);
+    constexpr static auto c_hl1 = rgba(42, 173, 145, 1.f);
+
+    ImVec4* colors = style.Colors;
+
+    colors[ImGuiCol_WindowBg]       = c_bg0;
+    colors[ImGuiCol_PopupBg]        = c_bg1;
+    colors[ImGuiCol_ChildBg]        = c_bg1;
+    colors[ImGuiCol_FrameBg]        = withAlpha(c_hl1, 0.25f);
+    colors[ImGuiCol_FrameBgHovered] = withAlpha(c_hl1, 0.5f);
+    colors[ImGuiCol_FrameBgActive]  = c_hl1;
+
+    colors[ImGuiCol_Text]         = rgba(255, 255, 255, 1.f);
+    colors[ImGuiCol_TextDisabled] = rgba(128, 128, 128, 1.f);
+    colors[ImGuiCol_TextLink]     = c_hl0;
+    colors[ImGuiCol_TextSelectedBg] = withAlpha(c_hl0, 0.25f);
+
+    colors[ImGuiCol_Border]        = rgba(28, 28, 28, 1.f);
+    colors[ImGuiCol_TitleBg]       = c_bg0;
+    colors[ImGuiCol_TitleBgActive] = c_bg2;
+
+    colors[ImGuiCol_ScrollbarBg]          = withAlpha(c_bg0, 0.1f);
+    colors[ImGuiCol_ScrollbarGrab]        = withAlpha(c_hl1, 0.25f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = withAlpha(c_hl1, 0.5f);
+    colors[ImGuiCol_ScrollbarGrabActive]  = c_hl1;
+
+    colors[ImGuiCol_CheckMark]        = c_hl0;
+    colors[ImGuiCol_SliderGrab]       = withAlpha(c_hl0, 0.5f);
+    colors[ImGuiCol_SliderGrabActive] = c_hl0;
+
+    colors[ImGuiCol_Button]        = withAlpha(c_hl0, 0.25f);
+    colors[ImGuiCol_ButtonHovered] = withAlpha(c_hl0, 0.5f);
+    colors[ImGuiCol_ButtonActive]  = c_hl0;
+
+    colors[ImGuiCol_Header]        = withAlpha(c_hl1, 0.25f);
+    colors[ImGuiCol_HeaderHovered] = withAlpha(c_hl1, 0.5f);
+    colors[ImGuiCol_HeaderActive]  = c_hl1;
+
+    colors[ImGuiCol_Separator]        = withAlpha(c_hl1, 1.f);
+    colors[ImGuiCol_SeparatorHovered] = withAlpha(c_hl1, 0.5f);
+    colors[ImGuiCol_SeparatorActive]  = c_hl1;
+
+    colors[ImGuiCol_ResizeGrip]        = withAlpha(c_hl1, 0.25f);
+    colors[ImGuiCol_ResizeGripHovered] = withAlpha(c_hl1, 0.5f);
+    colors[ImGuiCol_ResizeGripActive]  = c_hl1;
+
+    colors[ImGuiCol_Tab]                 = withAlpha(c_hl1, 0.25f);
+    colors[ImGuiCol_TabHovered]          = withAlpha(c_hl1, 0.5f);
+    colors[ImGuiCol_TabSelected]         = c_hl1;
+    colors[ImGuiCol_TabSelectedOverline] = c_hl0;
+
+    colors[ImGuiCol_TabDimmed]                 = withAlpha(c_hl1, 0.1f);
+    colors[ImGuiCol_TabDimmedSelected]         = withAlpha(c_hl1, 0.25f);
+    colors[ImGuiCol_TabDimmedSelectedOverline] = withAlpha(c_hl1, 0.0f);
+
+    colors[ImGuiCol_DockingPreview] = withAlpha(c_hl0, 0.25f);
+
+    colors[ImGuiCol_TableHeaderBg] = withAlpha(c_hl1, 0.25f);
+    colors[ImGuiCol_TableRowBgAlt] = rgba(0, 0, 0, 0.f);
+    colors[ImGuiCol_TableRowBg]    = rgba(0, 0, 0, 0.f);
+    colors[ImGuiCol_TableBorderLight] = rgba(128, 128, 128, 0.25f);
+    colors[ImGuiCol_TableBorderStrong] = rgba(128, 128, 128, 0.5f);
 }
 
 auto Application::LoadFonts() -> bool {
@@ -131,7 +240,7 @@ void Application::Run() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        if (false)
+        if (true)
             ImGui::ShowDemoWindow();
 
         UI_Main();

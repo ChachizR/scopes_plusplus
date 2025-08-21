@@ -38,6 +38,8 @@ private:
 
     auto InitImGui() -> bool;
 
+    void SetImGuiStyle();
+
     auto LoadFonts() -> bool;
 
     void ShutdownImGui();
