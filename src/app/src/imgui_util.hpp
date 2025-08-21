@@ -68,6 +68,12 @@ static inline void ImGuiUtilImageRender(
     ImGui::ImageWithBg(imTextureID, imgSize, uv0, uv1, c_bgColor);
 }
 
+static constexpr auto ImGuiUtilRelPosToImagePos(ImVec2 relPos, ImVec2 imgSize, ImVec2 offset = {0.f, 0.f}) -> ImVec2 {
+    return ImVec2(
+        offset.x + relPos.x * imgSize.x,
+        offset.y + (1.f - relPos.y) * imgSize.y);
+}
+
 static constexpr ImU32 c_lineColor      = IM_COL32(255, 255, 255, 128);
 static constexpr ImU32 c_lineColorHalf  = IM_COL32(255, 255, 255, 64);
 static constexpr ImU32 c_lineColorQuart = IM_COL32(255, 255, 255, 32);
@@ -92,19 +98,18 @@ static inline void ImGuiUtilRenderLumaWF(
 
     if (yuvRange == SourceYUVRange::Full) {
         for (int i = 0; i <= 256; i += 32) {
-            float y = topLeft.y + imgSize.y - (i / 255.f) * imgSize.y;
-            drawList->AddLine(
-                ImVec2(topLeft.x, y),
-                ImVec2(topLeft.x + imgSize.x, y),
-                c_lineColor, c_lineThickness);
+            const auto p1 = ImGuiUtilRelPosToImagePos(ImVec2(0.f, i / 255.f), imgSize, topLeft);
+            const auto p2 = ImGuiUtilRelPosToImagePos(ImVec2(1.f, i / 255.f), imgSize, topLeft);
+
+            drawList->AddLine(p1, p2, c_lineColor, c_lineThickness);
         }
     } else { // Limited range
         for (int i = 0; i <= 256; i += 32) {
-            float y = topLeft.y + imgSize.y - ((16.f + i * (219.f / 255.f)) / 255.f) * imgSize.y;
-            drawList->AddLine(
-                ImVec2(topLeft.x, y),
-                ImVec2(topLeft.x + imgSize.x, y),
-                c_lineColor, c_lineThickness);
+            const auto p1 = ImGuiUtilRelPosToImagePos(
+                ImVec2(0.f, (16.f + i * (219.f / 255.f)) / 255.f), imgSize, topLeft);
+            const auto p2 = ImGuiUtilRelPosToImagePos(
+                ImVec2(1.f, (16.f + i * (219.f / 255.f)) / 255.f), imgSize, topLeft);
+            drawList->AddLine(p1, p2, c_lineColor, c_lineThickness);
         }
     }
 }
@@ -127,6 +132,54 @@ static inline void ImGuiUtilRenderRGBWF(
             ImVec2(topLeft.x, y),
             ImVec2(topLeft.x + imgSize.x, y),
             c_lineColor, c_lineThickness);
+    }
+}
+
+static inline void ImGuiUtilRenderParade(
+    const CLGLTextureRGBA& texture,
+    ScaleBehavior          scaleBehavior = ScaleBehavior::OnlyScaleDown,
+    FlipBehavior           flipBehavior  = FlipBehavior::DoNotFlip) {
+    const auto imgSize     = ImGuiUtilGetImageSize(texture.size.ToImVec2(), scaleBehavior);
+    const auto [uv0, uv1]  = ImGuiUtilGetUVs(flipBehavior);
+    const auto imTextureID = static_cast<ImTextureID>(texture.glTextureID);
+    const auto topLeft     = ImGui::GetCursorScreenPos();
+    ImGui::ImageWithBg(imTextureID, imgSize, uv0, uv1, c_bgColor);
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+    for (int i = 0; i <= 256; i += 32) {
+        const auto p1 = ImGuiUtilRelPosToImagePos(ImVec2(0.f, i / 255.f), imgSize, topLeft);
+        const auto p2 = ImGuiUtilRelPosToImagePos(ImVec2(1.f, i / 255.f), imgSize, topLeft);
+        drawList->AddLine(p1, p2, c_lineColor, c_lineThickness);
+    }
+
+    auto p1 = ImGuiUtilRelPosToImagePos(ImVec2(1.f / 3.f, 0.f), imgSize, topLeft);
+    auto p2 = ImGuiUtilRelPosToImagePos(ImVec2(1.f / 3.f, 1.f), imgSize, topLeft);
+    drawList->AddLine(p1, p2, c_lineColor, c_lineThickness);
+
+    p1 = ImGuiUtilRelPosToImagePos(ImVec2(2.f / 3.f, 0.f), imgSize, topLeft);
+    p2 = ImGuiUtilRelPosToImagePos(ImVec2(2.f / 3.f, 1.f), imgSize, topLeft);
+    drawList->AddLine(p1, p2, c_lineColor, c_lineThickness);
+}
+
+static inline void ImGuiUtilRenderBlacklevel(
+    const CLGLTextureRGBA& texture,
+    ScaleBehavior          scaleBehavior = ScaleBehavior::OnlyScaleDown,
+    FlipBehavior           flipBehavior  = FlipBehavior::DoNotFlip) {
+    const auto imgSize     = ImGuiUtilGetImageSize(texture.size.ToImVec2(), scaleBehavior);
+    const auto [uv0, uv1]  = ImGuiUtilGetUVs(flipBehavior);
+    const auto imTextureID = static_cast<ImTextureID>(texture.glTextureID);
+    const auto topLeft     = ImGui::GetCursorScreenPos();
+    ImGui::ImageWithBg(imTextureID, imgSize, uv0, uv1, c_bgColor);
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+    const auto increment = 1.f / 35.f;
+    for (int i = 0; i < 35; i++) {
+        const auto color = (i % 5 == 0) ? c_lineColor : c_lineColorQuart;
+        const auto p1 = ImGuiUtilRelPosToImagePos(
+            ImVec2(0.f, i * increment), imgSize, topLeft);
+        const auto p2 = ImGuiUtilRelPosToImagePos(
+            ImVec2(1.f, i * increment), imgSize, topLeft);
+        drawList->AddLine(p1, p2, color, c_lineThickness);
     }
 }
 
@@ -255,12 +308,6 @@ static constexpr auto c_diaVerts = std::to_array<ImVec2>({
     {0.5f, 1.f  }
 });
 
-static constexpr auto ImGuiUtilRelPosToImagePos(ImVec2 relPos, ImVec2 imgSize, ImVec2 offset = {0.f, 0.f}) -> ImVec2 {
-    return ImVec2(
-        offset.x + relPos.x * imgSize.x,
-        offset.y + (1.f - relPos.y) * imgSize.y);
-}
-
 static inline void ImGuiUtilRenderDia(
     const CLGLTextureRGBA& texture,
     ScaleBehavior          scaleBehavior = ScaleBehavior::OnlyScaleDown,
@@ -377,10 +424,10 @@ static inline constexpr auto ConstexprMatMul3x3(const glm::mat3x3& m, glm::vec3 
         m[0][2] * v.x + m[1][2] * v.y + m[2][2] * v.z);
 }
 
-static consteval auto GetUVVectors() -> std::array < glm::vec2, c_uvVectorColors.size()> {
+static consteval auto GetUVVectors() -> std::array<glm::vec2, c_uvVectorColors.size()> {
     std::array<glm::vec2, c_uvVectorColors.size()> uvVectors;
     for (size_t i = 0; i < c_uvVectorColors.size(); i++) {
-        const auto& color = c_uvVectorColors[i];
+        const auto& color  = c_uvVectorColors[i];
         const auto  yuv709 = ConstexprMatMul3x3(c_mR2Y709_Limited, color) + c_offsetR2YLimited;
         uvVectors[i]       = glm::vec2(yuv709.y, yuv709.z);
     }

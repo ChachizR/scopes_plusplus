@@ -80,7 +80,7 @@ __kernel void createWaveformImages(
     // ===== RGB BLACKLEVEL =====
 
     {
-        uint src_y   = y * 0.15f;
+        uint src_y   = y * 0.137255f;
         uint src_gid = src_y * gx + x;
 
         r = (float)in_hist_rgb[src_gid * 3 + 0] * brightness / 255.f;

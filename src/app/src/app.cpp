@@ -262,19 +262,19 @@ void Application::UI_ActiveSource() noexcept {
     auto& wfRgbParade = sourceTextures->wfRGBParade;
 
     ImGui::Begin(wfRgbParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilImageRender(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGuiUtilRenderParade(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& wfRgbBlacks = sourceTextures->wfRGBBlacks;
 
     ImGui::Begin(wfRgbBlacks.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilImageRender(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGuiUtilRenderBlacklevel(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& wfYuvParade = sourceTextures->wfYUVParade;
 
     ImGui::Begin(wfYuvParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilImageRender(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+    ImGuiUtilRenderParade(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& scUV = sourceTextures->scUV;
