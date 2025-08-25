@@ -68,9 +68,13 @@ private:
     void UI_MainMenuBar() const noexcept;
     void UI_Settings() const noexcept;
     void UI_NDISources() noexcept;
-    void UI_ActiveSource() noexcept;
     void UI_SourceStats() noexcept;
     void UI_RenderSettings() noexcept;
+    void UI_SourcePreview(const scpp::TargetTextures* sourceTextures) noexcept;
+    void UI_FalseColor(const scpp::TargetTextures* sourceTextures) noexcept;
+    void UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexcept;
+    void UI_Scopes(const scpp::TargetTextures* sourceTextures) noexcept;
+    void UI_ActiveSource() noexcept;
 };
 
 } // namespace scpp

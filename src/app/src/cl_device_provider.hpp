@@ -29,6 +29,8 @@ struct RenderPipelineKernels {
 
     cl::Kernel createWaveformImages;
     cl::Kernel createScopeImages;
+
+    cl::Kernel createFalseColorImage;
 };
 
 class OpenCLDeviceProvider {
@@ -115,7 +117,8 @@ private:
     static constexpr auto c_KernelName_createWaveformImages = "createWaveformImages"sv;
     static constexpr auto c_KernelName_createScopeImages    = "createScopeImages"sv;
 
-    static constexpr auto c_KernelCommonSourcePath = "./kernels/common.cl"sv;
+    static constexpr auto c_KernelPostFXSourcePath = "./kernels/04_post_fx.cl"sv;
+    static constexpr auto c_KernelName_createFalseColorImage = "createFalseColorImage"sv;
 };
 
 } // namespace scpp

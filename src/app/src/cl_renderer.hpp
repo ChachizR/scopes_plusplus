@@ -4,6 +4,7 @@
 
 #include "utils.hpp"
 #include "cl_device_provider.hpp"
+#include "false_color.hpp"
 
 namespace scpp {
 
@@ -227,6 +228,12 @@ private:
     cl::Buffer m_bufAccRGB, m_bufAccYUV;
     cl::Buffer m_bufAcc2D_UV_RGBA, m_bufAcc2D_XYZ_RGBA, m_bufAcc2D_DIA_RGBA;
 
+    FalseColorMap    m_falseColorMap{c_falseColorMaps[0].second};
+    bool             m_falseColorMapChanged = true;
+    cl::Buffer       m_bufFalseColorMapFull;
+    cl::Buffer       m_bufFalseColorMapLimited;
+    std::string_view m_selectedFalseColorMapName{c_falseColorMaps[0].first};
+
     bool m_buffersInitialized{false};
 
     std::vector<cl::Memory> m_glObjects;
@@ -251,6 +258,18 @@ public:
 
     // should be called on the main gl thread
     void ResizeGLTextures();
+
+    [[nodiscard]]
+    auto GetFalseColorMap() const noexcept -> const FalseColorMap& { return m_falseColorMap; }
+
+    [[nodiscard]]
+    auto GetSelectedFalseColorMapName() const noexcept -> std::string_view { return m_selectedFalseColorMapName; }
+
+    void SetFalseColorMap(FalseColorMapDataRef map, std::string_view name = ""sv) {
+        m_falseColorMap             = FalseColorMap(map);
+        m_selectedFalseColorMapName = name;
+        m_falseColorMapChanged      = true;
+    }
 
 private:
     void UpdateGLObjects() {

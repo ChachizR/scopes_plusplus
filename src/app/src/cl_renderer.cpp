@@ -130,6 +130,9 @@ void OpenCLRenderer::ResizeBuffers() {
         m_bufAcc2D_UV_RGBA  = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, scopeAccSize);
         m_bufAcc2D_XYZ_RGBA = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, scopeAccSize);
         m_bufAcc2D_DIA_RGBA = cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, scopeAccSize);
+
+        m_bufFalseColorMapFull    = cl::Buffer(m_context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, 256 * sizeof(cl_uchar4));
+        m_bufFalseColorMapLimited = cl::Buffer(m_context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, 256 * sizeof(cl_uchar4));
     }
 
     m_buffersInitialized = true;
@@ -294,6 +297,18 @@ void OpenCLRenderer::ExecutePipeline(
 
     cl::NDRange ndrGlobalCreateScope(c_ScopeSize.width, c_ScopeSize.height);
 
+    /// POST FX
+
+    res += m_kernels.createFalseColorImage.setArg<cl::Buffer>(0, m_bufIntermYUV);
+    res += m_kernels.createFalseColorImage.setArg<cl_uint>(1, m_sourceDims.width);
+    res += m_kernels.createFalseColorImage.setArg<cl_uint>(2, m_sourceDims.height);
+    res += m_kernels.createFalseColorImage.setArg<cl::Buffer>(3, (renderSettings.yuvRange == SourceYUVRange::Full) ? m_bufFalseColorMapFull : m_bufFalseColorMapLimited);
+    res += m_kernels.createFalseColorImage.setArg<cl::ImageGL>(4, m_targetTextures->falseColor.clImageGL);
+
+    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL false color image kernel arguments");
+
+    cl::NDRange ndrGlobalFalseColor(m_sourceDims.width * m_sourceDims.height);
+
     /// UPLOAD SOURCE DATA
 
     {
@@ -301,6 +316,18 @@ void OpenCLRenderer::ExecutePipeline(
             m_bufSource, CL_FALSE, 0, m_sourceSizeBytes, sourceData);
 
         CHECK_CL_ERROR_RET(res, "Failed to write source data to OpenCL buffer");
+
+        if (m_falseColorMapChanged) [[unlikely]] {
+            res = m_commandQueue.enqueueWriteBuffer(
+                m_bufFalseColorMapFull, CL_FALSE, 0, 256 * sizeof(cl_uchar4), m_falseColorMap.GetDataFullRange().data());
+
+            CHECK_CL_ERROR_RET(res, "Failed to write false color map (full range) to OpenCL buffer");
+
+            res = m_commandQueue.enqueueWriteBuffer(
+                m_bufFalseColorMapLimited, CL_FALSE, 0, 256 * sizeof(cl_uchar4), m_falseColorMap.GetDataLimitedRange().data());
+
+            CHECK_CL_ERROR_RET(res, "Failed to write false color map (limited range) to OpenCL buffer");
+        }
     }
 
     /// RESET ACC BUFFERS
@@ -379,6 +406,14 @@ void OpenCLRenderer::ExecutePipeline(
         cl::NullRange);
 
     CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL create scope images kernel");
+
+    res = m_commandQueue.enqueueNDRangeKernel(
+        m_kernels.createFalseColorImage,
+        cl::NullRange,
+        ndrGlobalFalseColor,
+        cl::NullRange);
+
+    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL false color image kernel");
 
     res = m_commandQueue.enqueueReleaseGLObjects(&m_glObjects);
 

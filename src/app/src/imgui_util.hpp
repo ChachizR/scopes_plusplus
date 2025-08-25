@@ -19,8 +19,8 @@ enum class FlipBehavior {
 
 static inline auto ImGuiUtilGetContentScale(ImVec2 size, ScaleBehavior scaleBehavior = ScaleBehavior::OnlyScaleDown) -> float {
     ImVec2 avail  = ImGui::GetContentRegionAvail();
-    float  imgW   = size.x;
-    float  imgH   = size.y;
+    float  imgW   = (size.x > 0.f) ? size.x : 1.f;
+    float  imgH   = (size.y > 0.f) ? size.y : 1.f;
     float  scaleX = avail.x / imgW;
     float  scaleY = avail.y / imgH;
     float  scale  = 1.f;

@@ -38,11 +38,11 @@ struct std::formatter<scpp::Dims2D, char> {
     }
 };
 
-namespace scpp{
+namespace scpp {
 #pragma pack(push, 1)
 struct CLRect2D {
-    cl_int x;
-    cl_int y;
+    cl_int  x;
+    cl_int  y;
     cl_uint width;
     cl_uint height;
 };
@@ -99,4 +99,15 @@ constexpr T exp_constexpr(T x) {
     return sum * pow2i<T>(n);
 }
 
+template<Floating T>
+constexpr T mapRange(T value, T inMin, T inMax, T outMin, T outMax) { return outMin + (value - inMin) * (outMax - outMin) / (inMax - inMin); }
+
+template<Floating T>
+constexpr T mapRangeClampOut(T value, T inMin, T inMax, T outMin, T outMax, T outClampMin, T outClampMax) {
+    return std::clamp(mapRange(value, inMin, inMax, outMin, outMax), outClampMin, outClampMax);
 }
+
+template<Floating T>
+constexpr T lerp(T a, T b, T t) { return a + t * (b - a); }
+
+} // namespace scpp

@@ -239,7 +239,7 @@ void Application::Run() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        if (true)
+        if (false)
             ImGui::ShowDemoWindow();
 
         UI_Main();
@@ -338,26 +338,229 @@ void Application::UI_NDISources() noexcept {
     ImGui::End();
 }
 
-void Application::UI_ActiveSource() noexcept {
-    auto& sourceRenderer = m_source->GetRenderer();
-    if (sourceRenderer.needsResizeFlag_mainThread) {
-        sourceRenderer.ResizeGLTextures();
+void Application::UI_SourceStats() noexcept {
+    const auto& sourceStats = m_source->GetStats();
+    ImGui::SetNextWindowSizeConstraints(ImVec2(200, 50), c_uiMaxSize);
+    ImGui::Begin("Source Stats", nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGui::Text("Name: %s", m_source->GetName().data());
+    ImGui::Text("Dimensions: %ux%u", sourceStats.sourceDims.width, sourceStats.sourceDims.height);
+    ImGui::Text("FPS: %.2f", sourceStats.sourceFPS);
+    ImGui::Text(std::format("Format: {}", sourceStats.sourceFormat).c_str());
+    ImGui::Text("Max Render FPS: %.2f", sourceStats.maxRenderFPS);
+    ImGui::Text("Render Duration: %.4f ms", sourceStats.renderDurationMS);
+    ImGui::Text("Avg Max Render FPS: %.2f", sourceStats.avgMaxRenderFPS);
+    ImGui::Text("Avg Render Duration: %.4f ms", sourceStats.avgRenderDurationMS);
+    ImGui::End();
+}
+
+void Application::UI_RenderSettings() noexcept {
+    auto& renderSettings = m_source->GetRenderSettings();
+
+    ImGui::Begin("Render Settings", nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGui::SeparatorText("Source");
+
+    // Dropdown for color space
+    if (ImGui::BeginCombo(
+            "Color Space",
+            SourceColorSpaceToString(renderSettings.colorSpace).data())) {
+        for (int i = 0; i < static_cast<int>(SourceColorSpace::max); ++i) {
+            const auto colorSpace = static_cast<SourceColorSpace>(i);
+            if (ImGui::Selectable(SourceColorSpaceToString(colorSpace).data(), renderSettings.colorSpace == colorSpace)) {
+                renderSettings.colorSpace = colorSpace;
+            }
+        }
+        ImGui::EndCombo();
     }
 
-    auto sourceTextures = sourceRenderer.GetTargetTextures();
+    // Dropdown for YUV range
+    if (ImGui::BeginCombo(
+            "YUV Range",
+            SourceYUVRangeToString(renderSettings.yuvRange).data())) {
+        for (int i = 0; i < static_cast<int>(SourceYUVRange::max); ++i) {
+            const auto yuvRange = static_cast<SourceYUVRange>(i);
+            if (ImGui::Selectable(SourceYUVRangeToString(yuvRange).data(), renderSettings.yuvRange == yuvRange)) {
+                renderSettings.yuvRange = yuvRange;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::SeparatorText("False Color");
+
+    auto& sourceRenderer = m_source->GetRenderer();
+
+    if (ImGui::BeginCombo("False Color Map", sourceRenderer.GetSelectedFalseColorMapName().data())) {
+
+        for (const auto [name, map] : c_falseColorMapsSpan) {
+            if (ImGui::Selectable(name.data(), sourceRenderer.GetSelectedFalseColorMapName() == name)) {
+                sourceRenderer.SetFalseColorMap(map, name);
+            }
+        }
+
+        ImGui::EndCombo();
+    }
+
+    ImGui::End();
+}
+
+void Application::UI_SourcePreview(const scpp::TargetTextures* sourceTextures) noexcept {
+    const auto& sourceStats = m_source->GetStats();
+
+    const auto sourceAspect = WindowAspectData{
+        .targetAspectRatio = static_cast<float>(sourceStats.sourceDims.width) / static_cast<float>(sourceStats.sourceDims.height),
+        .offset            = ImVec2(0.f, 32.f) // Account for title bar height
+    };
 
     auto& sourcePreview = sourceTextures->sourcePreview;
 
-    const auto& renderSettings = m_source->GetRenderSettings();
-
-    /// SOURCE PREVIEW
-
-    ImGui::SetNextWindowSizeConstraints(ImVec2(160, 32 + 90), c_uiMaxSize);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(160, 32 + 90), c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&sourceAspect);
     ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilImageRender(sourcePreview, ScaleBehavior::ScaleToFit);
     ImGui::End();
+}
 
-    /// WAVEFORMS
+void Application::UI_FalseColor(const scpp::TargetTextures* sourceTextures) noexcept {
+    // --- Constants for layout ---
+    constexpr float kScaleTotalWidth = 95.0f; // total width for the scale column (labels + ticks + color band)
+    constexpr float kBandWidth       = 40.0f; // width of the colored bar itself (right-aligned inside the scale column)
+    constexpr float kLabelGap        = 6.0f;  // gap between labels/ticks area and the color band
+    constexpr float kLabelPadRight   = 4.0f;
+    constexpr float kInnerSpacing    = 4.0f; // spacing between image child and scale child
+
+    // Tick lengths
+    constexpr float kTickThinLen  = 6.0f;
+    constexpr float kTickMidLen   = 10.0f;
+    constexpr float kTickThickLen = 14.0f;
+
+    const auto& falseColorTex    = sourceTextures->falseColor;
+    const auto& sourcePreviewTex = sourceTextures->sourcePreview;
+    const auto& renderSettings   = m_source->GetRenderSettings();
+    const bool  useLimited       = (renderSettings.yuvRange == SourceYUVRange::Limited);
+    auto&       sourceRenderer   = m_source->GetRenderer();
+    const auto& fcMap            = sourceRenderer.GetFalseColorMap();
+    const auto& fcData           = useLimited ? fcMap.GetDataLimitedRange() : fcMap.GetDataFullRange();
+
+    const auto& sourceStats  = m_source->GetStats();
+    const auto  sourceAspect = WindowAspectData{
+         .targetAspectRatio = static_cast<float>(sourceStats.sourceDims.width) / static_cast<float>(sourceStats.sourceDims.height),
+         .offset            = ImVec2(kScaleTotalWidth + kInnerSpacing, 32.f) // Account for title bar height and width of scale
+    };
+
+    ImGui::SetNextWindowSizeConstraints(ImVec2(160 + kScaleTotalWidth, 32 + 90), c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&sourceAspect);
+
+    ImGui::Begin(falseColorTex.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+
+    ImVec2      avail            = ImGui::GetContentRegionAvail();
+    const float scaleColumnWidth = kScaleTotalWidth;
+    const float imageColumnWidth = (std::max)(0.0f, avail.x - scaleColumnWidth - kInnerSpacing);
+
+    // -----------------------
+    // LEFT: image area child
+    // -----------------------
+    ImGui::BeginChild("FalseColorImageChild", ImVec2(imageColumnWidth, avail.y), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+    const auto   imgSize = falseColorTex.size.ToImVec2();
+    const auto   scale   = ImGuiUtilGetContentScale(imgSize, ScaleBehavior::ScaleToFit);
+    const ImVec2 dispSize(imgSize.x * scale, imgSize.y * scale);
+
+    const auto topLeft = ImGui::GetCursorScreenPos();
+
+    const auto [uv0, uv1]        = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+    const auto imTextureIDSource = static_cast<ImTextureID>(sourcePreviewTex.glTextureID);
+    ImGui::ImageWithBg(imTextureIDSource, dispSize, uv0, uv1, c_bgColor);
+
+    ImGui::SetCursorScreenPos(topLeft);
+
+    const auto imTextureIDFC = static_cast<ImTextureID>(falseColorTex.glTextureID);
+    ImGui::ImageWithBg(imTextureIDFC, dispSize, uv0, uv1, ImVec4(0.f, 0.f, 0.f, 0.f));
+
+    ImGui::EndChild();
+
+    // -----------------------
+    // RIGHT: scale column
+    // -----------------------
+    ImGui::SameLine(0.0f, kInnerSpacing);
+    ImGui::BeginChild("FalseColorScaleChild", ImVec2(scaleColumnWidth, avail.y), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+    {
+        ImDrawList*  dl   = ImGui::GetWindowDrawList();
+        const ImVec2 base = ImGui::GetCursorScreenPos();
+
+        const float bandLeft    = base.x;
+        const float bandRight   = bandLeft + kBandWidth;
+        const float ticksLeft   = bandRight + kLabelGap;
+        const float labelsRight = base.x + scaleColumnWidth;
+
+        const float bandTop    = base.y + 16.f;
+        const float bandBottom = bandTop + dispSize.y - 32.f;
+
+        // ---- Draw the colored rectangles (0..255) ----
+        // We draw top bottom with y mapped so that index 255 is at the top (to match the Flutter mapping where 0% sits at bottom)
+        // If you prefer 0 at top, flip the mapping.
+        for (int v = 0; v < 256; ++v) {
+            const float y0 = mapRange(static_cast<float>(v), 0.f, 255.f, bandBottom, bandTop);
+            const float y1 = mapRange(static_cast<float>(v) + 1.f, 0.f, 255.f, bandBottom, bandTop);
+
+            const glm::u8vec4 c   = fcData[v];
+            const ImU32       col = IM_COL32(c.r, c.g, c.b, c.a);
+
+            dl->AddRectFilled(ImVec2(bandLeft, y1), ImVec2(bandRight, y0), col);
+        }
+
+        // ---- Ticks + labels (0..100%), mapped by YUV range ----
+
+        // Mapping range for percentages:
+        //   Full   : 0% at luma 0,   100% at luma 255
+        //   Limited: 0% at luma 16,  100% at luma 235
+        const float luma0   = useLimited ? 16.f : 0.f;
+        const float luma100 = useLimited ? 235.f : 255.f;
+
+        constexpr static auto tickCol   = IM_COL32(255, 255, 255, 217);
+        constexpr static auto tickCol5  = IM_COL32(255, 255, 255, 235);
+        constexpr static auto tickCol10 = IM_COL32(255, 255, 255, 255);
+
+        const ImU32 textCol = ImGui::GetColorU32(ImGui::GetStyle().Colors[ImGuiCol_Text]);
+
+        ImFont*     font     = ImGui::GetFont();
+        const float fontSize = ImGui::GetFontSize();
+
+        // Minor ticks every 1%, medium every 5%, thick every 10%, labels only at 10%
+        for (int p = 0; p <= 100; ++p) {
+            const bool is10 = (p % 10) == 0;
+            const bool is5  = (p % 5) == 0;
+
+            const float luma = mapRange(static_cast<float>(p), 0.f, 100.f, luma0, luma100);
+            const float y    = mapRange(luma, 0.f, 255.f, bandBottom, bandTop);
+
+            const auto [len, col] = [&]() -> std::pair<float, ImU32> {
+                if (is10)
+                    return {kTickThickLen, tickCol10};
+                if (is5)
+                    return {kTickMidLen, tickCol5};
+                return {kTickThinLen, tickCol};
+            }();
+
+            dl->AddLine(ImVec2(ticksLeft, y), ImVec2(ticksLeft + len, y), col, 1.0f);
+
+            // Label every 10%
+            if (is10) {
+                std::string buf = std::format("{}", p);
+
+                ImVec2      textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, buf.c_str());
+                const float tx       = labelsRight - kLabelPadRight - textSize.x;
+                const float ty       = y - textSize.y * 0.5f;
+                dl->AddText(ImVec2(tx, ty), textCol, buf.c_str());
+            }
+        }
+    }
+
+    ImGui::EndChild(); // scale
+
+    ImGui::End(); // window
+}
+
+void Application::UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexcept {
+    const auto& renderSettings = m_source->GetRenderSettings();
 
     auto& wfLuma = sourceTextures->wfLuma;
 
@@ -393,10 +596,11 @@ void Application::UI_ActiveSource() noexcept {
     ImGui::Begin(wfYuvParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilRenderParade(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
+}
 
-    /// SCOPES
-
-    auto& scUV = sourceTextures->scUV;
+void Application::UI_Scopes(const scpp::TargetTextures* sourceTextures) noexcept {
+    const auto& renderSettings = m_source->GetRenderSettings();
+    auto&       scUV           = sourceTextures->scUV;
     ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
     ImGui::Begin(scUV.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilRenderUV(scUV, ScaleBehavior::ScaleToFit);
@@ -415,52 +619,19 @@ void Application::UI_ActiveSource() noexcept {
     ImGui::End();
 }
 
-void Application::UI_SourceStats() noexcept {
-    const auto& sourceStats = m_source->GetStats();
-    ImGui::SetNextWindowSizeConstraints(ImVec2(200, 50), c_uiMaxSize);
-    ImGui::Begin("Source Stats", nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGui::Text("Name: %s", m_source->GetName().data());
-    ImGui::Text("Dimensions: %ux%u", sourceStats.sourceDims.width, sourceStats.sourceDims.height);
-    ImGui::Text("FPS: %.2f", sourceStats.sourceFPS);
-    ImGui::Text(std::format("Format: {}", sourceStats.sourceFormat).c_str());
-    ImGui::Text("Max Render FPS: %.2f", sourceStats.maxRenderFPS);
-    ImGui::Text("Render Duration: %.4f ms", sourceStats.renderDurationMS);
-    ImGui::Text("Avg Max Render FPS: %.2f", sourceStats.avgMaxRenderFPS);
-    ImGui::Text("Avg Render Duration: %.4f ms", sourceStats.avgRenderDurationMS);
-    ImGui::End();
-}
+void Application::UI_ActiveSource() noexcept {
+    auto& sourceRenderer = m_source->GetRenderer();
 
-void Application::UI_RenderSettings() noexcept {
-    auto& renderSettings = m_source->GetRenderSettings();
-
-    ImGui::Begin("Render Settings", nullptr, ImGuiWindowFlags_NoCollapse);
-    // Dropdown for color space
-    if (ImGui::BeginCombo(
-            "Color Space",
-            SourceColorSpaceToString(renderSettings.colorSpace).data())) {
-        for (int i = 0; i < static_cast<int>(SourceColorSpace::max); ++i) {
-            const auto colorSpace = static_cast<SourceColorSpace>(i);
-            if (ImGui::Selectable(SourceColorSpaceToString(colorSpace).data(), renderSettings.colorSpace == colorSpace)) {
-                renderSettings.colorSpace = colorSpace;
-            }
-        }
-        ImGui::EndCombo();
+    if (sourceRenderer.needsResizeFlag_mainThread) {
+        sourceRenderer.ResizeGLTextures();
     }
 
-    // Dropdown for YUV range
-    if (ImGui::BeginCombo(
-            "YUV Range",
-            SourceYUVRangeToString(renderSettings.yuvRange).data())) {
-        for (int i = 0; i < static_cast<int>(SourceYUVRange::max); ++i) {
-            const auto yuvRange = static_cast<SourceYUVRange>(i);
-            if (ImGui::Selectable(SourceYUVRangeToString(yuvRange).data(), renderSettings.yuvRange == yuvRange)) {
-                renderSettings.yuvRange = yuvRange;
-            }
-        }
-        ImGui::EndCombo();
-    }
+    auto sourceTextures = sourceRenderer.GetTargetTextures();
 
-    ImGui::End();
+    UI_SourcePreview(sourceTextures);
+    UI_FalseColor(sourceTextures);
+    UI_Waveforms(sourceTextures);
+    UI_Scopes(sourceTextures);
 }
 
 } // namespace scpp

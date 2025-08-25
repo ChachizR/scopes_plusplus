@@ -361,6 +361,22 @@ auto OpenCLDeviceProvider::CreateKernels() const -> std::expected<RenderPipeline
 
     CHECK_KERNEL_ERROR(res, c_KernelName_createScopeImages);
 
+    const auto postFxProgramPath = std::filesystem::path{c_KernelPostFXSourcePath};
+
+    auto postFxProgramEx = LoadProgramFromFile(postFxProgramPath);
+
+    if (!postFxProgramEx) {
+        std::println("Failed to load OpenCL program from file: {}", postFxProgramPath.string());
+        return std::unexpected(postFxProgramEx.error());
+    }
+
+    const auto postFxProgram = *postFxProgramEx;
+
+    kernels.createFalseColorImage =
+        cl::Kernel(postFxProgram, c_KernelName_createFalseColorImage.data(), &res);
+
+    CHECK_KERNEL_ERROR(res, c_KernelName_createFalseColorImage);
+
     kernels.initialized = true;
 
     return kernels;

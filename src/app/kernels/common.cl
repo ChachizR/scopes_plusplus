@@ -74,3 +74,7 @@ inline uint indexFromCoords(uint x, uint y, uint width) {
 inline uint indexFromCoordsVec(int2 coords, uint width) {
     return coords.y * width + coords.x;
 }
+
+inline float4 ucharColorToFloat4(uchar4 c) {
+    return (float4)(c.x / 255.f, c.y / 255.f, c.z / 255.f, c.w / 255.f);
+}
