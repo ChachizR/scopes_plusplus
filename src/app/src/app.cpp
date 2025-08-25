@@ -1,5 +1,4 @@
 #include "app.hpp"
-#include "imgui_util.hpp"
 
 namespace scpp {
 Application::Application() {
@@ -110,7 +109,7 @@ void Application::SetImGuiStyle() {
     style.ScrollbarSize    = 16.f; // width of the scrollbar
     style.GrabMinSize      = 12.f;
 
-    style.WindowBorderSize = 0.f;
+    style.WindowBorderSize = 1.f;
     style.ChildBorderSize  = 0.f;
     style.FrameBorderSize  = 0.f;
     style.PopupBorderSize  = 0.f;
@@ -152,9 +151,9 @@ void Application::SetImGuiStyle() {
     colors[ImGuiCol_FrameBgHovered] = withAlpha(c_hl1, 0.5f);
     colors[ImGuiCol_FrameBgActive]  = c_hl1;
 
-    colors[ImGuiCol_Text]         = rgba(255, 255, 255, 1.f);
-    colors[ImGuiCol_TextDisabled] = rgba(128, 128, 128, 1.f);
-    colors[ImGuiCol_TextLink]     = c_hl0;
+    colors[ImGuiCol_Text]           = rgba(255, 255, 255, 1.f);
+    colors[ImGuiCol_TextDisabled]   = rgba(128, 128, 128, 1.f);
+    colors[ImGuiCol_TextLink]       = c_hl0;
     colors[ImGuiCol_TextSelectedBg] = withAlpha(c_hl0, 0.25f);
 
     colors[ImGuiCol_Border]        = rgba(28, 28, 28, 1.f);
@@ -197,10 +196,10 @@ void Application::SetImGuiStyle() {
 
     colors[ImGuiCol_DockingPreview] = withAlpha(c_hl0, 0.25f);
 
-    colors[ImGuiCol_TableHeaderBg] = withAlpha(c_hl1, 0.25f);
-    colors[ImGuiCol_TableRowBgAlt] = rgba(0, 0, 0, 0.f);
-    colors[ImGuiCol_TableRowBg]    = rgba(0, 0, 0, 0.f);
-    colors[ImGuiCol_TableBorderLight] = rgba(128, 128, 128, 0.25f);
+    colors[ImGuiCol_TableHeaderBg]     = withAlpha(c_hl1, 0.25f);
+    colors[ImGuiCol_TableRowBgAlt]     = rgba(0, 0, 0, 0.f);
+    colors[ImGuiCol_TableRowBg]        = rgba(0, 0, 0, 0.f);
+    colors[ImGuiCol_TableBorderLight]  = rgba(128, 128, 128, 0.25f);
     colors[ImGuiCol_TableBorderStrong] = rgba(128, 128, 128, 0.5f);
 }
 
@@ -351,52 +350,66 @@ void Application::UI_ActiveSource() noexcept {
 
     const auto& renderSettings = m_source->GetRenderSettings();
 
+    /// SOURCE PREVIEW
+
+    ImGui::SetNextWindowSizeConstraints(ImVec2(160, 32 + 90), c_uiMaxSize);
     ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilImageRender(sourcePreview, ScaleBehavior::ScaleToFit);
     ImGui::End();
 
+    /// WAVEFORMS
+
     auto& wfLuma = sourceTextures->wfLuma;
 
+    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
     ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilRenderLumaWF(wfLuma, renderSettings.yuvRange,
                           ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& wfRgb = sourceTextures->wfRGB;
-
+    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
     ImGui::Begin(wfRgb.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilRenderRGBWF(wfRgb, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& wfRgbParade = sourceTextures->wfRGBParade;
 
+    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
     ImGui::Begin(wfRgbParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilRenderParade(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& wfRgbBlacks = sourceTextures->wfRGBBlacks;
 
+    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
     ImGui::Begin(wfRgbBlacks.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilRenderBlacklevel(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& wfYuvParade = sourceTextures->wfYUVParade;
 
+    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
     ImGui::Begin(wfYuvParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilRenderParade(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
+    /// SCOPES
+
     auto& scUV = sourceTextures->scUV;
+    ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
     ImGui::Begin(scUV.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilRenderUV(scUV, ScaleBehavior::ScaleToFit);
     ImGui::End();
 
     auto& scXYZ = sourceTextures->scXYZ;
+    ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
     ImGui::Begin(scXYZ.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilRenderCIE(scXYZ, renderSettings.colorSpace, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
     ImGui::End();
 
     auto& scDia = sourceTextures->scDia;
+    ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
     ImGui::Begin(scDia.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
     ImGuiUtilRenderDia(scDia, ScaleBehavior::ScaleToFit);
     ImGui::End();
@@ -404,6 +417,7 @@ void Application::UI_ActiveSource() noexcept {
 
 void Application::UI_SourceStats() noexcept {
     const auto& sourceStats = m_source->GetStats();
+    ImGui::SetNextWindowSizeConstraints(ImVec2(200, 50), c_uiMaxSize);
     ImGui::Begin("Source Stats", nullptr, ImGuiWindowFlags_NoCollapse);
     ImGui::Text("Name: %s", m_source->GetName().data());
     ImGui::Text("Dimensions: %ux%u", sourceStats.sourceDims.width, sourceStats.sourceDims.height);

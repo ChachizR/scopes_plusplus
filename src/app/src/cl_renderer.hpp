@@ -52,6 +52,7 @@ enum class SourceColorSpace {
     max // only for counting
 };
 
+[[nodiscard]]
 static inline constexpr auto SourceColorSpaceToString(SourceColorSpace colorSpace) noexcept -> std::string_view {
     switch (colorSpace) {
     case SourceColorSpace::Linear_RGB:
@@ -76,6 +77,7 @@ enum class SourceYUVRange {
     max          // only for counting
 };
 
+[[nodiscard]]
 static inline constexpr auto SourceYUVRangeToString(SourceYUVRange yuvRange) noexcept -> std::string_view {
     switch (yuvRange) {
     case SourceYUVRange::Limited:

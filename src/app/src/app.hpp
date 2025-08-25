@@ -6,6 +6,7 @@
 #include "video_source.hpp"
 #include "cl_renderer.hpp"
 #include "ndi_source_provider.hpp"
+#include "imgui_util.hpp"
 
 namespace scpp {
 
@@ -52,6 +53,17 @@ private:
 
     // UI
 
+    constexpr static auto c_uiWFAspect = WindowAspectData{
+        .targetAspectRatio = 580.f / 256.f,
+        .offset            = ImVec2(0.f, 32.f) // Account for title bar height
+    };
+
+    constexpr static auto c_uiSCWindowSizeOffset = ImVec2(0.f, 32.f);
+
+    constexpr static auto c_uiMinWFSize = ImVec2(100, 32 + 50);
+    constexpr static auto c_uiMinSCSize = ImVec2(100, 32 + 100);
+    constexpr static auto c_uiMaxSize   = ImVec2(FLT_MAX, FLT_MAX);
+
     void UI_Main() noexcept;
     void UI_MainMenuBar() const noexcept;
     void UI_Settings() const noexcept;
@@ -59,7 +71,6 @@ private:
     void UI_ActiveSource() noexcept;
     void UI_SourceStats() noexcept;
     void UI_RenderSettings() noexcept;
-    
 };
 
 } // namespace scpp

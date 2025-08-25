@@ -2,8 +2,6 @@
 
 #include "pch.hpp"
 
-#include "cl_renderer.hpp"
-
 namespace scpp {
 
 enum class ScaleBehavior {
@@ -175,7 +173,7 @@ static inline void ImGuiUtilRenderBlacklevel(
     const auto increment = 1.f / 35.f;
     for (int i = 0; i < 35; i++) {
         const auto color = (i % 5 == 0) ? c_lineColor : c_lineColorQuart;
-        const auto p1 = ImGuiUtilRelPosToImagePos(
+        const auto p1    = ImGuiUtilRelPosToImagePos(
             ImVec2(0.f, i * increment), imgSize, topLeft);
         const auto p2 = ImGuiUtilRelPosToImagePos(
             ImVec2(1.f, i * increment), imgSize, topLeft);
@@ -467,4 +465,86 @@ static inline void ImGuiUtilRenderUV(
         drawList->AddLine(p0, pa, c_lineColor, c_lineThickness);
     }
 }
+
+struct WindowAspectData {
+    float  targetAspectRatio; // width / height
+    ImVec2 offset;            // e.g. title bar offset
+};
+
+struct WindowSizeConstraints {
+
+    static inline ImVec2 ProjectToAspect(ImVec2 desiredWH, float aspect /* w/h */) {
+        // valid sizes lie on h = w / aspect  => direction d = (1, 1/aspect)
+        const glm::vec2 v(desiredWH.x, desiredWH.y);
+        const glm::vec2 d(1.0f, 1.0f / aspect);
+        const float     t = glm::dot(v, d) / glm::dot(d, d);
+        glm::vec2       p = t * d;
+
+        // clamp to non-negative and pixel snap (round to nearest int)
+        ImVec2 out((float)(int)(p.x + 0.5f), (float)(int)(p.y + 0.5f));
+        if (out.x < 0)
+            out.x = 0;
+        if (out.y < 0)
+            out.y = 0;
+        return out;
+    }
+
+    static inline ImVec2 SubtractOffsetNonNegative(ImVec2 a, ImVec2 off) {
+        ImVec2 r = ImVec2(a.x - off.x, a.y - off.y);
+        if (r.x < 0)
+            r.x = 0;
+        if (r.y < 0)
+            r.y = 0;
+        return r;
+    }
+    // Maintain a fixed aspect ratio (no offset)
+    static void AspectRatio(ImGuiSizeCallbackData* data) {
+        const float  aspect = *(float*)data->UserData; // width / height
+        const ImVec2 wh     = ProjectToAspect(data->DesiredSize, aspect);
+        data->DesiredSize   = wh;
+    }
+
+    // Force square (no offset)
+    static void Square(ImGuiSizeCallbackData* data) {
+        const ImVec2 wh   = ProjectToAspect(data->DesiredSize, 1.0f);
+        data->DesiredSize = wh;
+    }
+
+    // Snap size to grid step
+    static void Step(ImGuiSizeCallbackData* data) {
+        float step          = *(float*)data->UserData;
+        data->DesiredSize.x = roundf(data->DesiredSize.x / step) * step;
+        data->DesiredSize.y = roundf(data->DesiredSize.y / step) * step;
+    }
+
+    // Maintain aspect ratio with an offset (e.g. title bar height)
+    static void AspectWithOffset(ImGuiSizeCallbackData* data) {
+        const WindowAspectData* a      = (const WindowAspectData*)data->UserData;
+        const float             aspect = a->targetAspectRatio;
+        const ImVec2            off    = a->offset;
+
+        // operate in "content" space (minus chrome offset)
+        ImVec2 desired_content = SubtractOffsetNonNegative(data->DesiredSize, off);
+
+        // project to aspect in content space
+        ImVec2 wh_content = ProjectToAspect(desired_content, aspect);
+
+        // restore total window size
+        data->DesiredSize.x = wh_content.x + off.x;
+        data->DesiredSize.y = wh_content.y + off.y;
+    }
+
+    // Force square with an offset (e.g. title bar height)
+    static void SquareWithOffset(ImGuiSizeCallbackData* data) {
+        const ImVec2* offp = (const ImVec2*)data->UserData;
+
+        ImVec2 desired_content = SubtractOffsetNonNegative(data->DesiredSize, *offp);
+
+        ImVec2 wh_content = ProjectToAspect(desired_content, 1.0f);
+
+        data->DesiredSize.x = wh_content.x + offp->x;
+        data->DesiredSize.y = wh_content.y + offp->y;
+    }
+};
+
 } // namespace scpp
