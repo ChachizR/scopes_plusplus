@@ -203,18 +203,21 @@ void OpenCLRenderer::ExecutePipeline(
 
     cl::NDRange ndrGlobalConvert(m_sourceDims.width * m_sourceDims.height);
 
+    const auto features = renderSettings.enabledFeatures;
     /// ACCUMULATE KERNEL
+    if (features & RenderFeature::AnyWF) {
+        res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(0, m_bufIntermRGBA);
+        res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(1, m_bufIntermYUV);
+        res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(2, m_bufAccRGB);
+        res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(3, m_bufAccYUV);
+        res += m_kernels.accumulateWaveforms.setArg<cl_uint>(4, m_sourceDims.width);
+        res += m_kernels.accumulateWaveforms.setArg<cl_uint>(5, m_sourceDims.height);
+        res += m_kernels.accumulateWaveforms.setArg<cl_uchar>(6, 0);
+        res += m_kernels.accumulateWaveforms.setArg<CLRect2D>(7, CLRect2D{0, 0, 0, 0});
+        res += m_kernels.accumulateWaveforms.setArg<RenderFeatureFlags>(8, renderSettings.enabledFeatures);
 
-    res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(0, m_bufIntermRGBA);
-    res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(1, m_bufIntermYUV);
-    res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(2, m_bufAccRGB);
-    res += m_kernels.accumulateWaveforms.setArg<cl::Buffer>(3, m_bufAccYUV);
-    res += m_kernels.accumulateWaveforms.setArg<cl_uint>(4, m_sourceDims.width);
-    res += m_kernels.accumulateWaveforms.setArg<cl_uint>(5, m_sourceDims.height);
-    res += m_kernels.accumulateWaveforms.setArg<cl_uchar>(6, 0);
-    res += m_kernels.accumulateWaveforms.setArg<CLRect2D>(7, CLRect2D{0, 0, 0, 0});
-
-    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate kernel arguments");
+        CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate kernel arguments");
+    }
 
     static constexpr size_t localHistKernelY = c_WaveformSize.height;
 
@@ -226,86 +229,88 @@ void OpenCLRenderer::ExecutePipeline(
     /// CREATE IMAGE KERNEL
 
     float sampleCount = std::ceil(static_cast<float>(sourceDims.width) / static_cast<float>(c_WaveformSize.width));
+    float brightness  = (1.f + 8.f * (1080.f / (float)sourceDims.height)) / sampleCount;
 
-    float brightness = (1.f + 8.f * (1080.f / (float)sourceDims.height)) / sampleCount;
+    if (features & RenderFeature::AnyWF) {
+        res += m_kernels.createWaveformImages.setArg<cl::Buffer>(0, m_bufAccRGB);
+        res += m_kernels.createWaveformImages.setArg<cl::Buffer>(1, m_bufAccYUV);
+        res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(2, m_targetTextures->wfLuma.clImageGL);
+        res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(3, m_targetTextures->wfRGB.clImageGL);
+        res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(4, m_targetTextures->wfRGBParade.clImageGL);
+        res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(5, m_targetTextures->wfRGBBlacks.clImageGL);
+        res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(6, m_targetTextures->wfYUVParade.clImageGL);
+        res += m_kernels.createWaveformImages.setArg<cl_uint>(7, sourceDims.width);
+        res += m_kernels.createWaveformImages.setArg<cl_int>(8, static_cast<cl_int>(renderSettings.colorSpace));
+        res += m_kernels.createWaveformImages.setArg<cl_float>(9, brightness);
 
-    res += m_kernels.createWaveformImages.setArg<cl::Buffer>(0, m_bufAccRGB);
-    res += m_kernels.createWaveformImages.setArg<cl::Buffer>(1, m_bufAccYUV);
-    res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(2, m_targetTextures->wfLuma.clImageGL);
-    res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(3, m_targetTextures->wfRGB.clImageGL);
-    res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(4, m_targetTextures->wfRGBParade.clImageGL);
-    res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(5, m_targetTextures->wfRGBBlacks.clImageGL);
-    res += m_kernels.createWaveformImages.setArg<cl::ImageGL>(6, m_targetTextures->wfYUVParade.clImageGL);
-    res += m_kernels.createWaveformImages.setArg<cl_uint>(7, sourceDims.width);
-    res += m_kernels.createWaveformImages.setArg<cl_int>(8, static_cast<cl_int>(renderSettings.colorSpace));
-    res += m_kernels.createWaveformImages.setArg<cl_float>(9, brightness);
-
-    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL create waveform images kernel arguments");
+        CHECK_CL_ERROR_RET(res, "Failed to set OpenCL create waveform images kernel arguments");
+    }
 
     cl::NDRange ndrGlobalCreateWF(c_WaveformSize.width, c_WaveformSize.height);
     cl::NDRange ndrLocalCreateWF(1, c_WaveformSize.height);
 
     /// ACCUMULATE SCOPE KERNELS
+    if (features & RenderFeature::SCUV) {
+        res += m_kernels.accumulateUVScope.setArg<cl::Buffer>(0, m_bufIntermRGBA);
+        res += m_kernels.accumulateUVScope.setArg<cl::Buffer>(1, m_bufIntermYUV);
+        res += m_kernels.accumulateUVScope.setArg<cl::Buffer>(2, m_bufAcc2D_UV_RGBA);
+        res += m_kernels.accumulateUVScope.setArg<cl_uint>(3, m_sourceDims.width);
+        res += m_kernels.accumulateUVScope.setArg<cl_uint>(4, m_sourceDims.height);
+        res += m_kernels.accumulateUVScope.setArg<cl_uchar>(5, 0);
+        res += m_kernels.accumulateUVScope.setArg<CLRect2D>(6, CLRect2D{0, 0, 0, 0});
 
-    res += m_kernels.accumulateUVScope.setArg<cl::Buffer>(0, m_bufIntermRGBA);
-    res += m_kernels.accumulateUVScope.setArg<cl::Buffer>(1, m_bufIntermYUV);
-    res += m_kernels.accumulateUVScope.setArg<cl::Buffer>(2, m_bufAcc2D_UV_RGBA);
-    res += m_kernels.accumulateUVScope.setArg<cl_uint>(3, m_sourceDims.width);
-    res += m_kernels.accumulateUVScope.setArg<cl_uint>(4, m_sourceDims.height);
-    res += m_kernels.accumulateUVScope.setArg<cl_uchar>(5, 0);
-    res += m_kernels.accumulateUVScope.setArg<CLRect2D>(6, CLRect2D{0, 0, 0, 0});
+        CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate UV scope kernel arguments");
+    }
+    if (features & RenderFeature::SCXYZ) {
+        res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(0, m_bufIntermXYZ);
+        res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(1, m_bufAcc2D_XYZ_RGBA);
+        res += m_kernels.accumulateXYZScope.setArg<cl_uint>(2, m_sourceDims.width);
+        res += m_kernels.accumulateXYZScope.setArg<cl_uint>(3, m_sourceDims.height);
+        res += m_kernels.accumulateXYZScope.setArg<cl_uchar>(4, 0);
+        res += m_kernels.accumulateXYZScope.setArg<CLRect2D>(5, CLRect2D{0, 0, 0, 0});
+        res += m_kernels.accumulateXYZScope.setArg<cl_int>(6, static_cast<cl_int>(renderSettings.colorSpace));
 
-    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate UV scope kernel arguments");
+        CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate XYZ scope kernel arguments");
+    }
+    if (features & RenderFeature::SCDia) {
+        res += m_kernels.accumulateDiaScope.setArg<cl::Buffer>(0, m_bufIntermRGBA);
+        res += m_kernels.accumulateDiaScope.setArg<cl::Buffer>(1, m_bufAcc2D_DIA_RGBA);
+        res += m_kernels.accumulateDiaScope.setArg<cl_uint>(2, m_sourceDims.width);
+        res += m_kernels.accumulateDiaScope.setArg<cl_uint>(3, m_sourceDims.height);
+        res += m_kernels.accumulateDiaScope.setArg<cl_uchar>(4, 0);
+        res += m_kernels.accumulateDiaScope.setArg<CLRect2D>(5, CLRect2D{0, 0, 0, 0});
 
-    res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(0, m_bufIntermXYZ);
-    res += m_kernels.accumulateXYZScope.setArg<cl::Buffer>(1, m_bufAcc2D_XYZ_RGBA);
-    res += m_kernels.accumulateXYZScope.setArg<cl_uint>(2, m_sourceDims.width);
-    res += m_kernels.accumulateXYZScope.setArg<cl_uint>(3, m_sourceDims.height);
-    res += m_kernels.accumulateXYZScope.setArg<cl_uchar>(4, 0);
-    res += m_kernels.accumulateXYZScope.setArg<CLRect2D>(5, CLRect2D{0, 0, 0, 0});
-    res += m_kernels.accumulateXYZScope.setArg<cl_int>(6, static_cast<cl_int>(renderSettings.colorSpace));
-
-    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate XYZ scope kernel arguments");
-
-    res += m_kernels.accumulateDiaScope.setArg<cl::Buffer>(0, m_bufIntermRGBA);
-    res += m_kernels.accumulateDiaScope.setArg<cl::Buffer>(1, m_bufAcc2D_DIA_RGBA);
-    res += m_kernels.accumulateDiaScope.setArg<cl_uint>(2, m_sourceDims.width);
-    res += m_kernels.accumulateDiaScope.setArg<cl_uint>(3, m_sourceDims.height);
-    res += m_kernels.accumulateDiaScope.setArg<cl_uchar>(4, 0);
-    res += m_kernels.accumulateDiaScope.setArg<CLRect2D>(5, CLRect2D{0, 0, 0, 0});
-
-    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate DIA scope kernel arguments");
+        CHECK_CL_ERROR_RET(res, "Failed to set OpenCL accumulate DIA scope kernel arguments");
+    }
 
     cl::NDRange ndrGlobalAccScope(m_sourceDims.width, m_sourceDims.height);
 
     /// CREATE SCOPE IMAGES
+    if (features & RenderFeature::AnySC) {
+        res += m_kernels.createScopeImages.setArg<cl::Buffer>(0, m_bufAcc2D_UV_RGBA);
+        res += m_kernels.createScopeImages.setArg<cl::Buffer>(1, m_bufAcc2D_XYZ_RGBA);
+        res += m_kernels.createScopeImages.setArg<cl::Buffer>(2, m_bufAcc2D_DIA_RGBA);
+        res += m_kernels.createScopeImages.setArg<cl::ImageGL>(3, m_targetTextures->scUV.clImageGL);
+        res += m_kernels.createScopeImages.setArg<cl::ImageGL>(4, m_targetTextures->scXYZ.clImageGL);
+        res += m_kernels.createScopeImages.setArg<cl::ImageGL>(5, m_targetTextures->scDia.clImageGL);
+        res += m_kernels.createScopeImages.setArg<cl_uint>(6, m_sourceDims.width);
+        res += m_kernels.createScopeImages.setArg<cl_float>(7, brightness);
 
-    /*sampleCount = std::ceil(static_cast<float>(sourceDims.width) / static_cast<float>(c_ScopeSize.width));
-
-    brightness = (1.f + 8.f * (1080.f / (float)sourceDims.height)) / sampleCount;*/
-
-    res += m_kernels.createScopeImages.setArg<cl::Buffer>(0, m_bufAcc2D_UV_RGBA);
-    res += m_kernels.createScopeImages.setArg<cl::Buffer>(1, m_bufAcc2D_XYZ_RGBA);
-    res += m_kernels.createScopeImages.setArg<cl::Buffer>(2, m_bufAcc2D_DIA_RGBA);
-    res += m_kernels.createScopeImages.setArg<cl::ImageGL>(3, m_targetTextures->scUV.clImageGL);
-    res += m_kernels.createScopeImages.setArg<cl::ImageGL>(4, m_targetTextures->scXYZ.clImageGL);
-    res += m_kernels.createScopeImages.setArg<cl::ImageGL>(5, m_targetTextures->scDia.clImageGL);
-    res += m_kernels.createScopeImages.setArg<cl_uint>(6, m_sourceDims.width);
-    res += m_kernels.createScopeImages.setArg<cl_float>(7, brightness);
-
-    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL create scope images kernel arguments");
+        CHECK_CL_ERROR_RET(res, "Failed to set OpenCL create scope images kernel arguments");
+    }
 
     cl::NDRange ndrGlobalCreateScope(c_ScopeSize.width, c_ScopeSize.height);
 
     /// POST FX
+    if (features & RenderFeature::FalseColor) {
+        res += m_kernels.createFalseColorImage.setArg<cl::Buffer>(0, m_bufIntermYUV);
+        res += m_kernels.createFalseColorImage.setArg<cl_uint>(1, m_sourceDims.width);
+        res += m_kernels.createFalseColorImage.setArg<cl_uint>(2, m_sourceDims.height);
+        res += m_kernels.createFalseColorImage.setArg<cl::Buffer>(3, (renderSettings.yuvRange == SourceYUVRange::Full) ? m_bufFalseColorMapFull : m_bufFalseColorMapLimited);
+        res += m_kernels.createFalseColorImage.setArg<cl::ImageGL>(4, m_targetTextures->falseColor.clImageGL);
 
-    res += m_kernels.createFalseColorImage.setArg<cl::Buffer>(0, m_bufIntermYUV);
-    res += m_kernels.createFalseColorImage.setArg<cl_uint>(1, m_sourceDims.width);
-    res += m_kernels.createFalseColorImage.setArg<cl_uint>(2, m_sourceDims.height);
-    res += m_kernels.createFalseColorImage.setArg<cl::Buffer>(3, (renderSettings.yuvRange == SourceYUVRange::Full) ? m_bufFalseColorMapFull : m_bufFalseColorMapLimited);
-    res += m_kernels.createFalseColorImage.setArg<cl::ImageGL>(4, m_targetTextures->falseColor.clImageGL);
-
-    CHECK_CL_ERROR_RET(res, "Failed to set OpenCL false color image kernel arguments");
+        CHECK_CL_ERROR_RET(res, "Failed to set OpenCL false color image kernel arguments");
+    }
 
     cl::NDRange ndrGlobalFalseColor(m_sourceDims.width * m_sourceDims.height);
 
@@ -327,22 +332,34 @@ void OpenCLRenderer::ExecutePipeline(
                 m_bufFalseColorMapLimited, CL_FALSE, 0, 256 * sizeof(cl_uchar4), m_falseColorMap.GetDataLimitedRange().data());
 
             CHECK_CL_ERROR_RET(res, "Failed to write false color map (limited range) to OpenCL buffer");
+
+            m_falseColorMapChanged = false;
         }
     }
 
     /// RESET ACC BUFFERS
 
     {
-        res = m_commandQueue.enqueueFillBuffer(m_bufAccRGB, 0, 0, c_WaveformSize.Area() * sizeof(cl_uint) * 3);
-        CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for RGB accumulation");
-        res = m_commandQueue.enqueueFillBuffer(m_bufAccYUV, 0, 0, c_WaveformSize.Area() * sizeof(cl_uint) * 3);
-        CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for YUV accumulation");
-        res = m_commandQueue.enqueueFillBuffer(m_bufAcc2D_UV_RGBA, 0, 0, c_ScopeSize.Area() * sizeof(cl_uint) * 4);
-        CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for UV scope accumulation");
-        res = m_commandQueue.enqueueFillBuffer(m_bufAcc2D_XYZ_RGBA, 0, 0, c_ScopeSize.Area() * sizeof(cl_uint) * 4);
-        CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for XYZ scope accumulation");
-        res = m_commandQueue.enqueueFillBuffer(m_bufAcc2D_DIA_RGBA, 0, 0, c_ScopeSize.Area() * sizeof(cl_uint) * 4);
-        CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for DIA scope accumulation");
+        if (features & RenderFeature::AnyWFRgb) {
+            res = m_commandQueue.enqueueFillBuffer(m_bufAccRGB, 0, 0, c_WaveformSize.Area() * sizeof(cl_uint) * 3);
+            CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for RGB accumulation");
+        }
+        if (features & RenderFeature::AnyWFYUV) {
+            res = m_commandQueue.enqueueFillBuffer(m_bufAccYUV, 0, 0, c_WaveformSize.Area() * sizeof(cl_uint) * 3);
+            CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for YUV accumulation");
+        }
+        if (features & RenderFeature::SCUV) {
+            res = m_commandQueue.enqueueFillBuffer(m_bufAcc2D_UV_RGBA, 0, 0, c_ScopeSize.Area() * sizeof(cl_uint) * 4);
+            CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for UV scope accumulation");
+        }
+        if (features & RenderFeature::SCXYZ) {
+            res = m_commandQueue.enqueueFillBuffer(m_bufAcc2D_XYZ_RGBA, 0, 0, c_ScopeSize.Area() * sizeof(cl_uint) * 4);
+            CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for XYZ scope accumulation");
+        }
+        if (features & RenderFeature::SCDia) {
+            res = m_commandQueue.enqueueFillBuffer(m_bufAcc2D_DIA_RGBA, 0, 0, c_ScopeSize.Area() * sizeof(cl_uint) * 4);
+            CHECK_CL_ERROR_RET(res, "Failed to fill OpenCL buffer for DIA scope accumulation");
+        }
     }
 
     /// EXECUTE KERNELS
@@ -359,61 +376,72 @@ void OpenCLRenderer::ExecutePipeline(
 
     CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL convert kernel");
 
-    res = m_commandQueue.enqueueNDRangeKernel(
-        m_kernels.accumulateWaveforms,
-        cl::NullRange,
-        ndrGlobalAccWF,
-        ndrLocalAccWF);
+    if (features & RenderFeature::AnyWF) {
+        res = m_commandQueue.enqueueNDRangeKernel(
+            m_kernels.accumulateWaveforms,
+            cl::NullRange,
+            ndrGlobalAccWF,
+            ndrLocalAccWF);
 
-    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate waveforms kernel");
+        CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate waveforms kernel");
+        res = m_commandQueue.enqueueNDRangeKernel(
+            m_kernels.createWaveformImages,
+            cl::NullRange,
+            ndrGlobalCreateWF,
+            ndrLocalCreateWF);
 
-    res = m_commandQueue.enqueueNDRangeKernel(
-        m_kernels.createWaveformImages,
-        cl::NullRange,
-        ndrGlobalCreateWF,
-        ndrLocalCreateWF);
+        CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL create waveform images kernel");
+    }
 
-    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL create waveform images kernel");
+    if (features & RenderFeature::SCUV) {
+        res = m_commandQueue.enqueueNDRangeKernel(
+            m_kernels.accumulateUVScope,
+            cl::NullRange,
+            ndrGlobalAccScope,
+            cl::NullRange);
 
-    res = m_commandQueue.enqueueNDRangeKernel(
-        m_kernels.accumulateUVScope,
-        cl::NullRange,
-        ndrGlobalAccScope,
-        cl::NullRange);
+        CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate UV scope kernel");
+    }
 
-    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate UV scope kernel");
+    if (features & RenderFeature::SCXYZ) {
+        res = m_commandQueue.enqueueNDRangeKernel(
+            m_kernels.accumulateXYZScope,
+            cl::NullRange,
+            ndrGlobalAccScope,
+            cl::NullRange);
 
-    res = m_commandQueue.enqueueNDRangeKernel(
-        m_kernels.accumulateXYZScope,
-        cl::NullRange,
-        ndrGlobalAccScope,
-        cl::NullRange);
+        CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate XYZ scope kernel");
+    }
 
-    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate XYZ scope kernel");
+    if (features & RenderFeature::SCDia) {
+        res = m_commandQueue.enqueueNDRangeKernel(
+            m_kernels.accumulateDiaScope,
+            cl::NullRange,
+            ndrGlobalAccScope,
+            cl::NullRange);
 
-    res = m_commandQueue.enqueueNDRangeKernel(
-        m_kernels.accumulateDiaScope,
-        cl::NullRange,
-        ndrGlobalAccScope,
-        cl::NullRange);
+        CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate DIA scope kernel");
+    }
 
-    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL accumulate DIA scope kernel");
+    if (features & RenderFeature::AnySC) {
+        res = m_commandQueue.enqueueNDRangeKernel(
+            m_kernels.createScopeImages,
+            cl::NullRange,
+            ndrGlobalCreateScope,
+            cl::NullRange);
 
-    res = m_commandQueue.enqueueNDRangeKernel(
-        m_kernels.createScopeImages,
-        cl::NullRange,
-        ndrGlobalCreateScope,
-        cl::NullRange);
+        CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL create scope images kernel");
+    }
 
-    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL create scope images kernel");
+    if (features & RenderFeature::FalseColor) {
+        res = m_commandQueue.enqueueNDRangeKernel(
+            m_kernels.createFalseColorImage,
+            cl::NullRange,
+            ndrGlobalFalseColor,
+            cl::NullRange);
 
-    res = m_commandQueue.enqueueNDRangeKernel(
-        m_kernels.createFalseColorImage,
-        cl::NullRange,
-        ndrGlobalFalseColor,
-        cl::NullRange);
-
-    CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL false color image kernel");
+        CHECK_CL_ERROR_RET(res, "Failed to enqueue OpenCL false color image kernel");
+    }
 
     res = m_commandQueue.enqueueReleaseGLObjects(&m_glObjects);
 

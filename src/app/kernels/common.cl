@@ -78,3 +78,30 @@ inline uint indexFromCoordsVec(int2 coords, uint width) {
 inline float4 ucharColorToFloat4(uchar4 c) {
     return (float4)(c.x / 255.f, c.y / 255.f, c.z / 255.f, c.w / 255.f);
 }
+
+typedef uint RenderFeatureFlags;
+
+#define RENDER_FEATURE_NONE 0
+#define RENDER_FEATURE_FC (1 << 0)
+#define RENDER_FEATURE_WF_LUMA (1 << 1)
+#define RENDER_FEATURE_WF_RGB (1 << 2)
+#define RENDER_FEATURE_WF_RGBPARADE (1 << 3)
+#define RENDER_FEATURE_WF_RGBBLACKS (1 << 4)
+#define RENDER_FEATURE_WF_YUVPARADE (1 << 5)
+#define RENDER_FEATURE_SC_UV (1 << 6)
+#define RENDER_FEATURE_SC_XYZ (1 << 7)
+#define RENDER_FEATURE_SC_DIA (1 << 8)
+
+#define RENDER_FEATURE_ANY_WF_RGB \
+    (RENDER_FEATURE_WF_RGB | RENDER_FEATURE_WF_RGBPARADE | RENDER_FEATURE_WF_RGBBLACKS)
+
+#define RENDER_FEATURE_ANY_WF_YUV \
+    (RENDER_FEATURE_WF_YUVPARADE | RENDER_FEATURE_WF_LUMA)
+
+#define RENDER_FEATURE_ANY_WF \
+    (RENDER_FEATURE_ANY_WF_RGB | RENDER_FEATURE_ANY_WF_YUV)
+
+#define RENDER_FEATURE_ANY_SC \
+    (RENDER_FEATURE_SC_UV | RENDER_FEATURE_SC_XYZ | RENDER_FEATURE_SC_DIA)
+
+#define RENDER_FEATURE_ALL 0xFFFFFFFF

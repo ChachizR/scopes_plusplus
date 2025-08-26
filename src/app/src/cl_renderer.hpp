@@ -89,10 +89,39 @@ static inline constexpr auto SourceYUVRangeToString(SourceYUVRange yuvRange) noe
     return "Unknown YUV Range";
 }
 
-struct RenderSettings {
-    SourceColorSpace colorSpace{SourceColorSpace::BT709};
-    SourceYUVRange   yuvRange{SourceYUVRange::Limited};
+using RenderFeatureFlags = cl_uint;
+
+enum RenderFeature : RenderFeatureFlags {
+    None        = 0,
+    FalseColor  = 1 << 0,
+    WFLuma      = 1 << 1,
+    WFRgb       = 1 << 2,
+    WFRgbParade = 1 << 3,
+    WFRgbBlacks = 1 << 4,
+    WFYuvParade = 1 << 5,
+    SCUV        = 1 << 6,
+    SCXYZ       = 1 << 7,
+    SCDia       = 1 << 8,
+    AnyWFRgb    = WFRgb | WFRgbParade | WFRgbBlacks,
+    AnyWFYUV    = WFLuma | WFYuvParade,
+    AnyWF       = AnyWFRgb | AnyWFYUV,
+    AnySC       = SCUV | SCXYZ | SCDia,
+    All         = 0xFFFFFFFF
 };
+
+struct RenderSettings {
+    SourceColorSpace   colorSpace{SourceColorSpace::BT709};
+    SourceYUVRange     yuvRange{SourceYUVRange::Limited};
+    RenderFeatureFlags enabledFeatures{RenderFeature::All};
+};
+
+constexpr static inline void SetRenderFeatureFlag(RenderFeatureFlags& flags, RenderFeature feature, bool enabled = true) noexcept {
+    if (enabled && (~flags & feature)) {
+        flags |= feature;
+    } else if (!enabled && (flags & feature)) {
+        flags &= ~feature;
+    }
+}
 
 enum class SourceFormat {
     unknown = 0,

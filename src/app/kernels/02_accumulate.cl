@@ -22,7 +22,8 @@ __kernel void accumulateWaveforms(
     __global uint*        out_hist_rgb,
     __global uint*        out_hist_yuv,
     uint src_width, uint src_height,
-    uchar mask_enabled, cl_rect_2D mask_rect) {
+    uchar mask_enabled, cl_rect_2D mask_rect,
+    RenderFeatureFlags features) {
 
     __local uint local_hist_rgb_r[WAVEFORM_BINS]; // 1KB
     __local uint local_hist_rgb_g[WAVEFORM_BINS]; // 1KB
@@ -62,14 +63,18 @@ __kernel void accumulateWaveforms(
         // check if the pixel is within the mask rectangle
         if (mask_enabled == 0 || isWithin(mask_rect, x, y)) {
             // RGB WF, RGB Parade WF, RGB Blacks WF
-            atomic_inc(&local_hist_rgb_r[bin(in_rgba[rgbaPB + 0])]);
-            atomic_inc(&local_hist_rgb_g[bin(in_rgba[rgbaPB + 1])]);
-            atomic_inc(&local_hist_rgb_b[bin(in_rgba[rgbaPB + 2])]);
+            if (features & RENDER_FEATURE_ANY_WF_RGB) {
+                atomic_inc(&local_hist_rgb_r[bin(in_rgba[rgbaPB + 0])]);
+                atomic_inc(&local_hist_rgb_g[bin(in_rgba[rgbaPB + 1])]);
+                atomic_inc(&local_hist_rgb_b[bin(in_rgba[rgbaPB + 2])]);
+            }
 
             // Luma WF, YUV Parade
-            atomic_inc(&local_hist_yuv_y[bin(in_yuv[yuvPB + 0])]);
-            atomic_inc(&local_hist_yuv_u[bin(in_yuv[yuvPB + 1])]);
-            atomic_inc(&local_hist_yuv_v[bin(in_yuv[yuvPB + 2])]);
+            if (features & RENDER_FEATURE_ANY_WF_YUV) {
+                atomic_inc(&local_hist_yuv_y[bin(in_yuv[yuvPB + 0])]);
+                atomic_inc(&local_hist_yuv_u[bin(in_yuv[yuvPB + 1])]);
+                atomic_inc(&local_hist_yuv_v[bin(in_yuv[yuvPB + 2])]);
+            }
         }
     }
 
@@ -81,13 +86,17 @@ __kernel void accumulateWaveforms(
         uint wf_x  = (uint)floor((float)(WF_WIDTH - 1) / (float)src_width * x);
         uint wf_id = lid * WF_WIDTH + wf_x;
 
-        atomic_add(&out_hist_rgb[wf_id * 3 + 0], local_hist_rgb_r[lid]);
-        atomic_add(&out_hist_rgb[wf_id * 3 + 1], local_hist_rgb_g[lid]);
-        atomic_add(&out_hist_rgb[wf_id * 3 + 2], local_hist_rgb_b[lid]);
+        if (features & RENDER_FEATURE_ANY_WF_RGB) {
+            atomic_add(&out_hist_rgb[wf_id * 3 + 0], local_hist_rgb_r[lid]);
+            atomic_add(&out_hist_rgb[wf_id * 3 + 1], local_hist_rgb_g[lid]);
+            atomic_add(&out_hist_rgb[wf_id * 3 + 2], local_hist_rgb_b[lid]);
+        }
 
-        atomic_add(&out_hist_yuv[wf_id * 3 + 0], local_hist_yuv_y[lid]);
-        atomic_add(&out_hist_yuv[wf_id * 3 + 1], local_hist_yuv_u[lid]);
-        atomic_add(&out_hist_yuv[wf_id * 3 + 2], local_hist_yuv_v[lid]);
+        if (features & RENDER_FEATURE_ANY_WF_YUV) {
+            atomic_add(&out_hist_yuv[wf_id * 3 + 0], local_hist_yuv_y[lid]);
+            atomic_add(&out_hist_yuv[wf_id * 3 + 1], local_hist_yuv_u[lid]);
+            atomic_add(&out_hist_yuv[wf_id * 3 + 2], local_hist_yuv_v[lid]);
+        }
     }
 }
 

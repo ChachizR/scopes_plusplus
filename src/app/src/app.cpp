@@ -434,7 +434,7 @@ void Application::UI_FalseColor(const scpp::TargetTextures* sourceTextures) noex
 
     const auto& falseColorTex    = sourceTextures->falseColor;
     const auto& sourcePreviewTex = sourceTextures->sourcePreview;
-    const auto& renderSettings   = m_source->GetRenderSettings();
+    auto&       renderSettings   = m_source->GetRenderSettings();
     const bool  useLimited       = (renderSettings.yuvRange == SourceYUVRange::Limited);
     auto&       sourceRenderer   = m_source->GetRenderer();
     const auto& fcMap            = sourceRenderer.GetFalseColorMap();
@@ -448,175 +448,200 @@ void Application::UI_FalseColor(const scpp::TargetTextures* sourceTextures) noex
 
     ImGui::SetNextWindowSizeConstraints(ImVec2(160 + kScaleTotalWidth, 32 + 90), c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&sourceAspect);
 
-    ImGui::Begin(falseColorTex.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    auto falseColorVisible = ImGui::Begin(falseColorTex.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
 
-    ImVec2      avail            = ImGui::GetContentRegionAvail();
-    const float scaleColumnWidth = kScaleTotalWidth;
-    const float imageColumnWidth = (std::max)(0.0f, avail.x - scaleColumnWidth - kInnerSpacing);
+    if (falseColorVisible) {
 
-    // -----------------------
-    // LEFT: image area child
-    // -----------------------
-    ImGui::BeginChild("FalseColorImageChild", ImVec2(imageColumnWidth, avail.y), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImVec2      avail            = ImGui::GetContentRegionAvail();
+        const float scaleColumnWidth = kScaleTotalWidth;
+        const float imageColumnWidth = (std::max)(0.0f, avail.x - scaleColumnWidth - kInnerSpacing);
 
-    const auto   imgSize = falseColorTex.size.ToImVec2();
-    const auto   scale   = ImGuiUtilGetContentScale(imgSize, ScaleBehavior::ScaleToFit);
-    const ImVec2 dispSize(imgSize.x * scale, imgSize.y * scale);
+        // -----------------------
+        // LEFT: image area child
+        // -----------------------
+        ImGui::BeginChild("FalseColorImageChild", ImVec2(imageColumnWidth, avail.y), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-    const auto topLeft = ImGui::GetCursorScreenPos();
+        const auto   imgSize = falseColorTex.size.ToImVec2();
+        const auto   scale   = ImGuiUtilGetContentScale(imgSize, ScaleBehavior::ScaleToFit);
+        const ImVec2 dispSize(imgSize.x * scale, imgSize.y * scale);
 
-    const auto [uv0, uv1]        = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
-    const auto imTextureIDSource = static_cast<ImTextureID>(sourcePreviewTex.glTextureID);
-    ImGui::ImageWithBg(imTextureIDSource, dispSize, uv0, uv1, c_bgColor);
+        const auto topLeft = ImGui::GetCursorScreenPos();
 
-    ImGui::SetCursorScreenPos(topLeft);
+        const auto [uv0, uv1]        = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+        const auto imTextureIDSource = static_cast<ImTextureID>(sourcePreviewTex.glTextureID);
+        ImGui::ImageWithBg(imTextureIDSource, dispSize, uv0, uv1, c_bgColor);
 
-    const auto imTextureIDFC = static_cast<ImTextureID>(falseColorTex.glTextureID);
-    ImGui::ImageWithBg(imTextureIDFC, dispSize, uv0, uv1, ImVec4(0.f, 0.f, 0.f, 0.f));
+        ImGui::SetCursorScreenPos(topLeft);
 
-    ImGui::EndChild();
+        const auto imTextureIDFC = static_cast<ImTextureID>(falseColorTex.glTextureID);
+        ImGui::ImageWithBg(imTextureIDFC, dispSize, uv0, uv1, ImVec4(0.f, 0.f, 0.f, 0.f));
 
-    // -----------------------
-    // RIGHT: scale column
-    // -----------------------
-    ImGui::SameLine(0.0f, kInnerSpacing);
-    ImGui::BeginChild("FalseColorScaleChild", ImVec2(scaleColumnWidth, avail.y), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::EndChild();
 
-    {
-        ImDrawList*  dl   = ImGui::GetWindowDrawList();
-        const ImVec2 base = ImGui::GetCursorScreenPos();
+        // -----------------------
+        // RIGHT: scale column
+        // -----------------------
+        ImGui::SameLine(0.0f, kInnerSpacing);
+        ImGui::BeginChild("FalseColorScaleChild", ImVec2(scaleColumnWidth, avail.y), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-        const float bandLeft    = base.x;
-        const float bandRight   = bandLeft + kBandWidth;
-        const float ticksLeft   = bandRight + kLabelGap;
-        const float labelsRight = base.x + scaleColumnWidth;
+        {
+            ImDrawList*  dl   = ImGui::GetWindowDrawList();
+            const ImVec2 base = ImGui::GetCursorScreenPos();
 
-        const float bandTop    = base.y + 16.f;
-        const float bandBottom = bandTop + dispSize.y - 32.f;
+            const float bandLeft    = base.x;
+            const float bandRight   = bandLeft + kBandWidth;
+            const float ticksLeft   = bandRight + kLabelGap;
+            const float labelsRight = base.x + scaleColumnWidth;
 
-        // ---- Draw the colored rectangles (0..255) ----
-        // We draw top bottom with y mapped so that index 255 is at the top (to match the Flutter mapping where 0% sits at bottom)
-        // If you prefer 0 at top, flip the mapping.
-        for (int v = 0; v < 256; ++v) {
-            const float y0 = mapRange(static_cast<float>(v), 0.f, 255.f, bandBottom, bandTop);
-            const float y1 = mapRange(static_cast<float>(v) + 1.f, 0.f, 255.f, bandBottom, bandTop);
+            const float bandTop    = base.y + 16.f;
+            const float bandBottom = bandTop + dispSize.y - 32.f;
 
-            const glm::u8vec4 c   = fcData[v];
-            const ImU32       col = IM_COL32(c.r, c.g, c.b, c.a);
+            // ---- Draw the colored rectangles (0..255) ----
+            // We draw top bottom with y mapped so that index 255 is at the top (to match the Flutter mapping where 0% sits at bottom)
+            // If you prefer 0 at top, flip the mapping.
+            for (int v = 0; v < 256; ++v) {
+                const float y0 = mapRange(static_cast<float>(v), 0.f, 255.f, bandBottom, bandTop);
+                const float y1 = mapRange(static_cast<float>(v) + 1.f, 0.f, 255.f, bandBottom, bandTop);
 
-            dl->AddRectFilled(ImVec2(bandLeft, y1), ImVec2(bandRight, y0), col);
-        }
+                const glm::u8vec4 c   = fcData[v];
+                const ImU32       col = IM_COL32(c.r, c.g, c.b, c.a);
 
-        // ---- Ticks + labels (0..100%), mapped by YUV range ----
+                dl->AddRectFilled(ImVec2(bandLeft, y1), ImVec2(bandRight, y0), col);
+            }
 
-        // Mapping range for percentages:
-        //   Full   : 0% at luma 0,   100% at luma 255
-        //   Limited: 0% at luma 16,  100% at luma 235
-        const float luma0   = useLimited ? 16.f : 0.f;
-        const float luma100 = useLimited ? 235.f : 255.f;
+            // ---- Ticks + labels (0..100%), mapped by YUV range ----
 
-        constexpr static auto tickCol   = IM_COL32(255, 255, 255, 217);
-        constexpr static auto tickCol5  = IM_COL32(255, 255, 255, 235);
-        constexpr static auto tickCol10 = IM_COL32(255, 255, 255, 255);
+            // Mapping range for percentages:
+            //   Full   : 0% at luma 0,   100% at luma 255
+            //   Limited: 0% at luma 16,  100% at luma 235
+            const float luma0   = useLimited ? 16.f : 0.f;
+            const float luma100 = useLimited ? 235.f : 255.f;
 
-        const ImU32 textCol = ImGui::GetColorU32(ImGui::GetStyle().Colors[ImGuiCol_Text]);
+            constexpr static auto tickCol   = IM_COL32(255, 255, 255, 217);
+            constexpr static auto tickCol5  = IM_COL32(255, 255, 255, 235);
+            constexpr static auto tickCol10 = IM_COL32(255, 255, 255, 255);
 
-        ImFont*     font     = ImGui::GetFont();
-        const float fontSize = ImGui::GetFontSize();
+            const ImU32 textCol = ImGui::GetColorU32(ImGui::GetStyle().Colors[ImGuiCol_Text]);
 
-        // Minor ticks every 1%, medium every 5%, thick every 10%, labels only at 10%
-        for (int p = 0; p <= 100; ++p) {
-            const bool is10 = (p % 10) == 0;
-            const bool is5  = (p % 5) == 0;
+            ImFont*     font     = ImGui::GetFont();
+            const float fontSize = ImGui::GetFontSize();
 
-            const float luma = mapRange(static_cast<float>(p), 0.f, 100.f, luma0, luma100);
-            const float y    = mapRange(luma, 0.f, 255.f, bandBottom, bandTop);
+            // Minor ticks every 1%, medium every 5%, thick every 10%, labels only at 10%
+            for (int p = 0; p <= 100; ++p) {
+                const bool is10 = (p % 10) == 0;
+                const bool is5  = (p % 5) == 0;
 
-            const auto [len, col] = [&]() -> std::pair<float, ImU32> {
-                if (is10)
-                    return {kTickThickLen, tickCol10};
-                if (is5)
-                    return {kTickMidLen, tickCol5};
-                return {kTickThinLen, tickCol};
-            }();
+                const float luma = mapRange(static_cast<float>(p), 0.f, 100.f, luma0, luma100);
+                const float y    = mapRange(luma, 0.f, 255.f, bandBottom, bandTop);
 
-            dl->AddLine(ImVec2(ticksLeft, y), ImVec2(ticksLeft + len, y), col, 1.0f);
+                const auto [len, col] = [&]() -> std::pair<float, ImU32> {
+                    if (is10)
+                        return {kTickThickLen, tickCol10};
+                    if (is5)
+                        return {kTickMidLen, tickCol5};
+                    return {kTickThinLen, tickCol};
+                }();
 
-            // Label every 10%
-            if (is10) {
-                std::string buf = std::format("{}", p);
+                dl->AddLine(ImVec2(ticksLeft, y), ImVec2(ticksLeft + len, y), col, 1.0f);
 
-                ImVec2      textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, buf.c_str());
-                const float tx       = labelsRight - kLabelPadRight - textSize.x;
-                const float ty       = y - textSize.y * 0.5f;
-                dl->AddText(ImVec2(tx, ty), textCol, buf.c_str());
+                // Label every 10%
+                if (is10) {
+                    std::string buf = std::format("{}", p);
+
+                    ImVec2      textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, buf.c_str());
+                    const float tx       = labelsRight - kLabelPadRight - textSize.x;
+                    const float ty       = y - textSize.y * 0.5f;
+                    dl->AddText(ImVec2(tx, ty), textCol, buf.c_str());
+                }
             }
         }
+
+        ImGui::EndChild(); // scale
     }
-
-    ImGui::EndChild(); // scale
-
     ImGui::End(); // window
+    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::FalseColor, falseColorVisible);
 }
 
 void Application::UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexcept {
-    const auto& renderSettings = m_source->GetRenderSettings();
+    auto& renderSettings = m_source->GetRenderSettings();
 
-    auto& wfLuma = sourceTextures->wfLuma;
-
-    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
-    ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilRenderLumaWF(wfLuma, renderSettings.yuvRange,
-                          ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-    ImGui::End();
-
-    auto& wfRgb = sourceTextures->wfRGB;
-    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
-    ImGui::Begin(wfRgb.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilRenderRGBWF(wfRgb, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-    ImGui::End();
-
-    auto& wfRgbParade = sourceTextures->wfRGBParade;
-
-    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
-    ImGui::Begin(wfRgbParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilRenderParade(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-    ImGui::End();
-
-    auto& wfRgbBlacks = sourceTextures->wfRGBBlacks;
-
-    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
-    ImGui::Begin(wfRgbBlacks.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilRenderBlacklevel(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-    ImGui::End();
-
-    auto& wfYuvParade = sourceTextures->wfYUVParade;
-
-    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
-    ImGui::Begin(wfYuvParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilRenderParade(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-    ImGui::End();
+    { /// Luma Waveform
+        auto& wfLuma = sourceTextures->wfLuma;
+        ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+        const auto wfLumaVisible = ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        if (wfLumaVisible)
+            ImGuiUtilRenderLumaWF(wfLuma, renderSettings.yuvRange, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFLuma, wfLumaVisible);
+        ImGui::End();
+    }
+    { /// RGB Waveform
+        auto& wfRgb = sourceTextures->wfRGB;
+        ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+        const auto wfRgbVisible = ImGui::Begin(wfRgb.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        if (wfRgbVisible)
+            ImGuiUtilRenderRGBWF(wfRgb, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFRgb, wfRgbVisible);
+        ImGui::End();
+    }
+    { /// RGB Parade
+        auto& wfRgbParade = sourceTextures->wfRGBParade;
+        ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+        const auto wfRgbParadeVisible = ImGui::Begin(wfRgbParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        if (wfRgbParadeVisible)
+            ImGuiUtilRenderParade(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFRgbParade, wfRgbParadeVisible);
+        ImGui::End();
+    }
+    { /// RGB Blacks
+        auto& wfRgbBlacks = sourceTextures->wfRGBBlacks;
+        ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+        const auto wfRgbBlacksVisible = ImGui::Begin(wfRgbBlacks.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        if (wfRgbBlacksVisible)
+            ImGuiUtilRenderBlacklevel(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFRgbBlacks, wfRgbBlacksVisible);
+        ImGui::End();
+    }
+    { /// YUV Parade
+        auto& wfYuvParade = sourceTextures->wfYUVParade;
+        ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+        const auto wfYuvParadeVisible = ImGui::Begin(wfYuvParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        if (wfYuvParadeVisible)
+            ImGuiUtilRenderParade(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFYuvParade, wfYuvParadeVisible);
+        ImGui::End();
+    }
 }
 
 void Application::UI_Scopes(const scpp::TargetTextures* sourceTextures) noexcept {
-    const auto& renderSettings = m_source->GetRenderSettings();
-    auto&       scUV           = sourceTextures->scUV;
-    ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
-    ImGui::Begin(scUV.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilRenderUV(scUV, ScaleBehavior::ScaleToFit);
-    ImGui::End();
+    auto& renderSettings = m_source->GetRenderSettings();
 
-    auto& scXYZ = sourceTextures->scXYZ;
-    ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
-    ImGui::Begin(scXYZ.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilRenderCIE(scXYZ, renderSettings.colorSpace, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-    ImGui::End();
-
-    auto& scDia = sourceTextures->scDia;
-    ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
-    ImGui::Begin(scDia.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGuiUtilRenderDia(scDia, ScaleBehavior::ScaleToFit);
-    ImGui::End();
+    { /// UV Scope
+        auto& scUV = sourceTextures->scUV;
+        ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
+        auto scUVVisible = ImGui::Begin(scUV.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        if (scUVVisible)
+            ImGuiUtilRenderUV(scUV, ScaleBehavior::ScaleToFit);
+        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::SCUV, scUVVisible);
+        ImGui::End();
+    }
+    { /// XYZ Scope
+        auto& scXYZ = sourceTextures->scXYZ;
+        ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
+        auto scXYZVisible = ImGui::Begin(scXYZ.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        if (scXYZVisible)
+            ImGuiUtilRenderCIE(scXYZ, renderSettings.colorSpace, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
+        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::SCXYZ, scXYZVisible);
+        ImGui::End();
+    }
+    { /// Dia Scope
+        auto& scDia = sourceTextures->scDia;
+        ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
+        auto scDiaVisible = ImGui::Begin(scDia.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        if (scDiaVisible)
+            ImGuiUtilRenderDia(scDia, ScaleBehavior::ScaleToFit);
+        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::SCDia, scDiaVisible);
+        ImGui::End();
+    }
 }
 
 void Application::UI_ActiveSource() noexcept {
