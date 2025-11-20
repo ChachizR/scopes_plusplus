@@ -3,6 +3,7 @@ out
 .vs
 .vscode
 .VSCodeCounter
+.github
 ext/imgui/imgui
 ext/glfw/glfw
 
