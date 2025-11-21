@@ -1,6 +1,6 @@
 # Scopes++
 
-[![CMake](https://img.shields.io/badge/build-cmake-blue.svg)](https://cmake.org) [![C++23](https://img.shields.io/badge/C%2B%2B-23-brightgreen.svg)](https://isocpp.org) [![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](#license)
+[![CMake](https://img.shields.io/badge/build-cmake-blue.svg)](https://cmake.org) [![C++23](https://img.shields.io/badge/C%2B%2B-23-brightgreen.svg)](https://isocpp.org) [![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](#license) ![Stars](https://img.shields.io/github/stars/MindStudioOfficial/scopes_plusplus?style=flat)
 
 ![Scopes++ Screenshot](docs/screenshots/ScopesPlusPlus_20251121.webp "Scopes++ Screenshot")
 
@@ -10,31 +10,51 @@ This software is an open-source rework of LiveScopes.tv, which I previously wrot
 
 This project is organized as a standard CMake project and produces a single executable. Runtime assets and OpenCL kernels are copied next to the executable by post-build steps so the binary can be run directly from `build/`.
 
+## Features (WIP)
+
+- [x] Waveforms (Luma, RGB, RGB Parade, RGB Blacklevel, YUV Parade)
+- [x] UV Vectorscope
+- [x] CIE 1931 Chromaticity
+- [x] Double Diamond Scope
+- [x] False Color Viewer
+- [x] Selectable color spaces (Linear RGB, sRGB, BT.709, BT.601_525, BT.601_625, BT.2020) and legal ranges
+- [x] GPU-accelerated image pipeline (OpenGL + OpenCL interop)
+- [x] 32-Bit float based processing pipeline
+- [x] Customizable & dockable user-interface
+- [x] NDI Input support
+
+## Roadmap
+
+- [ ] Add webcam capture sources
+- [ ] Add Blackmagic DeckLink input support
+- [ ] Add support for LUTs
+- [ ] Add focus peaking
+- [ ] Add exposure zebra
+
+
+## Known issues
+
+- Mismatch between OpenGL and OpenCL device selection when multiple GPUs are present. This causes errors/crashes.
+
+
 ## Overview
 
-- Source: `src/app`
-- Assets: `src/app/assets`
-- OpenCL kernels: `src/app/kernels`
-- External libs: `ext/` (imgui, glm, glfw, opencl, ndi)
+```
+src/
+└─ app/
+   ├─ src/        # C++ sources
+   ├─ assets/     # UI and static assets
+   └─ kernels/    # OpenCL kernels
+ext/              # External libraries (see below)
+docs/screenshots/ # Documentation images
+```
 
 ## Quickstart (Windows)
 
-1. Configure the project (creates the `build/` directory):
-
 ```powershell
-cmake -B build -S .
-```
-
-2. Build in Debug and run:
-
-```powershell
-cmake --build build --parallel --config Debug
-.\build\src\app\Debug\scopes++.exe
-```
-
-3. Build in Release and run:
-
-```powershell
+git clone https://github.com/MindStudioOfficial/scopes_plusplus.git
+cd scopes_plusplus
+cmake -B build
 cmake --build build --parallel --config Release
 .\build\src\app\Release\scopes++.exe
 ```
@@ -54,15 +74,6 @@ cmake --build build --parallel --config Release
 ```
 
 - OpenCL kernels and `assets/` are copied to the build output via CMake post-build steps/targets.
-
-## Known limitations
-
-- Mismatch between OpenGL and OpenCL device selection when multiple GPUs are present. This causes errors/crashes.
-
-## Roadmap
-
-- [ ] Add webcam capture sources.
-- [ ] Add Blackmagic DeckLink input support.
 
 ## Development patterns & conventions
 
