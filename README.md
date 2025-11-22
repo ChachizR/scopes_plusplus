@@ -44,6 +44,7 @@ src/
 └─ app/
    ├─ src/        # C++ sources
    ├─ assets/     # UI and static assets
+   ├─ test/       # Unit tests
    └─ kernels/    # OpenCL kernels
 ext/              # External libraries (see below)
 docs/screenshots/ # Documentation images
@@ -80,6 +81,16 @@ cmake --build build --parallel --config Release
 - New source files: place `.cpp` files under `src/app/src` and headers under `src/app/src` (CMake uses `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)`). Re-run `setup_cmake.bat` if CMake doesn't pick up new files.
 - Precompiled headers (PCH) are used for MSVC: `pch.hpp` / `pch.cpp`. Follow the existing pattern if adding large headers.
 - Keep binary dependencies in `ext/` where possible; CMake links to those targets or libraries for deterministic builds.
+
+## Testing
+
+This project uses [Catch2](https://github.com/catchorg/Catch2) as the testing framework. Unit tests are located in the `src/app/test/` directory. CMake creates a separate "tests" target to build and run the tests. You can run the tests using the following command:
+
+```powershell
+cmake --build build --target tests --config Debug
+
+.\build\src\app\test\Debug\tests.exe
+```
 
 ## Contributing
 
