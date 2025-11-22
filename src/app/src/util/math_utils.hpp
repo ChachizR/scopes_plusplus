@@ -1,11 +1,17 @@
 #pragma once
 
-#include "pch.hpp"
+#include <format>
+#include <algorithm>
+
+#include <CL/opencl.hpp>
+#include <imgui.h>
 
 namespace scpp {
 struct Dims2D {
     uint32_t width;
     uint32_t height;
+
+    constexpr Dims2D(int32_t w, int32_t h) = delete;
 
     constexpr Dims2D(uint32_t w, uint32_t h)
         : width{w}

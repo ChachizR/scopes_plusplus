@@ -211,8 +211,6 @@ auto OpenCLDeviceProvider::LoadProgramFromFile(const std::filesystem::path& path
         return std::unexpected(ErrorCode::KernelCreateProgramFailed);
     }
 
-
-
     res = program.build({m_device}, "-Ikernels");
     if (res != CL_SUCCESS) {
         std::println("Failed to build OpenCL program: {}", res);

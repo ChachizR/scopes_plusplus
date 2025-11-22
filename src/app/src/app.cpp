@@ -1,6 +1,7 @@
 #include "app.hpp"
 
 namespace scpp {
+
 Application::Application() {
     if (!InitGLFW()) {
         std::println("Failed to initialize GLFW");

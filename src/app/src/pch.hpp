@@ -3,7 +3,6 @@
 #pragma warning(push,1)
 #pragma warning(disable: 26439)
 
-#define CL_HPP_TARGET_OPENCL_VERSION 300
 #include <CL/opencl.hpp>
 
 #include "imgui.h"

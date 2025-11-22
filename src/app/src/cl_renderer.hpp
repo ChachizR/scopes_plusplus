@@ -237,9 +237,9 @@ private:
 
     bool m_initialized{false};
 
-    static constexpr Dims2D c_DefaultSourceSize{1920, 1080};
-    static constexpr Dims2D c_WaveformSize{580, 256};
-    static constexpr Dims2D c_ScopeSize{256, 256};
+    static constexpr Dims2D c_DefaultSourceSize{1920u, 1080u};
+    static constexpr Dims2D c_WaveformSize{580u, 256u};
+    static constexpr Dims2D c_ScopeSize{256u, 256u};
 
     std::unique_ptr<TargetTextures> m_targetTextures = nullptr;
 
