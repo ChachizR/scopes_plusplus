@@ -126,3 +126,10 @@ if(MSVC)
         "/Yc\"pch.hpp\""
     )
 endif()
+
+target_compile_definitions(
+    ${PROJECT_NAME} PUBLIC
+    CL_HPP_TARGET_OPENCL_VERSION=300
+)
+
+add_subdirectory(./test) # Add test source

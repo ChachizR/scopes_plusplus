@@ -8,7 +8,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # exports compile commands for IDEs
 
 set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=modernize-*,readability-*) # enables clang-tidy with specific checks
 
-add_subdirectory(./ext)
-add_subdirectory(./src/app)
+add_subdirectory(./ext) # Add external dependencies
+add_subdirectory(./src/app) # Add main application source
 
 install(TARGETS ScopesPlusPlusMain)
+
+enable_testing()
