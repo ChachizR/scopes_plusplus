@@ -5,14 +5,18 @@
 #include "utils.hpp"
 #include "video_source.hpp"
 #include "cl_renderer.hpp"
-#include "ndi_source_provider.hpp"
 #include "imgui_util.hpp"
+#include "source_provider.hpp"
 
 namespace scpp {
 
 class Application {
 private:
+#if defined(__APPLE__)
+    constexpr static auto m_glslVersion = "#version 150"sv;
+#else
     constexpr static auto m_glslVersion = "#version 330"sv;
+#endif
 
     float m_mainScale{};
 
@@ -21,11 +25,23 @@ private:
     ImVec4 m_clearColor{0.05f, 0.05f, 0.05f, 1.00f};
 
     ImFont* m_fontRoboto{nullptr};
+    std::array<char, 1024> m_videoFilePath{};
+
+    bool m_showSourcePreview{true};
+    bool m_showFalseColor{true};
+    bool m_showWFLuma{true};
+    bool m_showWFRgb{true};
+    bool m_showWFRgbParade{true};
+    bool m_showWFRgbBlacks{true};
+    bool m_showWFYuvParade{true};
+    bool m_showSCUV{true};
+    bool m_showSCXYZ{true};
+    bool m_showSCDia{true};
 
     std::unique_ptr<scpp::OpenCLDeviceProvider> m_openclDeviceProvider = nullptr;
 
-    std::unique_ptr<NDISourceProvider> m_ndiSourceProvider = nullptr;
-    std::unique_ptr<VideoSource>       m_source            = nullptr;
+    std::unique_ptr<SourceProvider> m_sourceProvider = nullptr;
+    std::unique_ptr<VideoSource>    m_source         = nullptr;
 
 public:
     Application();
@@ -65,9 +81,10 @@ private:
     constexpr static auto c_uiMaxSize   = ImVec2(FLT_MAX, FLT_MAX);
 
     void UI_Main() noexcept;
-    void UI_MainMenuBar() const noexcept;
+    void UI_MainMenuBar() noexcept;
     void UI_Settings() const noexcept;
-    void UI_NDISources() noexcept;
+    void SyncRenderFeaturesFromUI() noexcept;
+    void UI_Sources() noexcept;
     void UI_SourceStats() noexcept;
     void UI_RenderSettings() noexcept;
     void UI_SourcePreview(const scpp::TargetTextures* sourceTextures) noexcept;

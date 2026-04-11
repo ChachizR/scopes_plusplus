@@ -41,8 +41,8 @@ protected:
     VideoSource(const OpenCLDeviceProvider& deviceProviderRef)
         : m_renderer{deviceProviderRef} {}
 
-    VideoSource(VideoSource&&)            = default;
-    VideoSource& operator=(VideoSource&&) = default;
+    VideoSource(VideoSource&&)            = delete;
+    VideoSource& operator=(VideoSource&&) = delete;
 
 public:
     virtual ~VideoSource() {
@@ -58,6 +58,8 @@ public:
 
     [[nodiscard]]
     virtual auto Start() -> ErrorCode = 0;
+
+    virtual void UpdateOnMainThread() noexcept {}
 
     void Stop() {
         if (!m_isRunning) {

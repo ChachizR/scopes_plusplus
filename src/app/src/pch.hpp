@@ -1,7 +1,9 @@
 #pragma once
 
+#ifdef _MSC_VER
 #pragma warning(push,1)
 #pragma warning(disable: 26439)
+#endif
 
 #include <CL/opencl.hpp>
 
@@ -9,24 +11,31 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
+#define GLFW_INCLUDE_NONE
+
 #ifdef _WIN32
 #include <windows.h>
 #include <wingdi.h>
 #elif defined(__APPLE__)
+#include <OpenGL/gl3.h>
 #include <OpenGL/OpenGL.h>
 #else // Linux / X11
+#include <GL/gl.h>
 #include <GL/glx.h>
 #endif
 
 #include <GLFW/glfw3.h>
-#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3native.h>
 
 #include <glm/glm.hpp> 
 
+#if defined(SCPP_ENABLE_NDI)
 #include "Processing.NDI.Advanced.h"
+#endif
 
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 
 #include <string>
 #include <print>
@@ -58,3 +67,4 @@ using Clock = std::chrono::steady_clock;
 
 #include <filesystem>
 #include <fstream>
+#include <cmath>

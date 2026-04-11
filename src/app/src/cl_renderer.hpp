@@ -140,6 +140,7 @@ enum class SourceFormat {
     P216
 };
 
+#if defined(SCPP_ENABLE_NDI)
 [[nodiscard]]
 static inline constexpr auto SourceFormatFromNDIFourCC(NDIlib_FourCC_video_type_e fourcc) noexcept -> SourceFormat {
     switch (fourcc) {
@@ -162,6 +163,7 @@ static inline constexpr auto SourceFormatFromNDIFourCC(NDIlib_FourCC_video_type_
     }
     return SourceFormat::unknown;
 }
+#endif
 
 [[nodiscard]]
 static inline constexpr auto SourceFormatToString(SourceFormat format) noexcept -> std::string_view {
