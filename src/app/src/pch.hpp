@@ -27,6 +27,10 @@
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 
+#ifdef None
+#undef None
+#endif
+
 #include <glm/glm.hpp> 
 
 #if defined(SCPP_ENABLE_NDI)
@@ -47,6 +51,7 @@ using namespace std::literals::string_view_literals;
 
 #include <vector>
 #include <array>
+#include <deque>
 #include <map>
 #include <unordered_map>
 
@@ -56,6 +61,7 @@ using namespace std::literals::string_view_literals;
 #include <expected>
 #include <optional>
 #include <cstdint>
+#include <cctype>
 
 #include <chrono>
 using namespace std::literals::chrono_literals;

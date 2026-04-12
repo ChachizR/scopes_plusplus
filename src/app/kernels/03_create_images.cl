@@ -9,7 +9,8 @@ __kernel void createWaveformImages(
     write_only image2d_t out_wf_rgb_parade,
     write_only image2d_t out_wf_rgb_blacks,
     write_only image2d_t out_wf_yuv_parade,
-    uint src_width, int colorspace, float brightness) {
+    uint src_width, int colorspace, float brightness,
+    RenderFeatureFlags features) {
     size_t x  = get_global_id(0);
     size_t y  = get_global_id(1);
     int2   xy = (int2)(x, y);
@@ -26,22 +27,25 @@ __kernel void createWaveformImages(
 
     // ===== LUMA =====
 
-    a = (float)clamp8(in_hist_yuv[readPB + 0] * brightness) / 255.f;
-
-    write_imagef(out_wf_luma, xy, (float4)(0.f, 1.f, 0.f, a));
+    if (features & RENDER_FEATURE_WF_LUMA) {
+        a = (float)clamp8(in_hist_yuv[readPB + 0] * brightness) / 255.f;
+        write_imagef(out_wf_luma, xy, (float4)(0.f, 1.f, 0.f, a));
+    }
 
     // ===== RGB =====
 
-    r = (float)in_hist_rgb[readPB + 0] * brightness / 255.f;
-    g = (float)in_hist_rgb[readPB + 1] * brightness / 255.f;
-    b = (float)in_hist_rgb[readPB + 2] * brightness / 255.f;
-    a = 1.f;
+    if (features & RENDER_FEATURE_WF_RGB) {
+        r = (float)in_hist_rgb[readPB + 0] * brightness / 255.f;
+        g = (float)in_hist_rgb[readPB + 1] * brightness / 255.f;
+        b = (float)in_hist_rgb[readPB + 2] * brightness / 255.f;
+        a = 1.f;
 
-    write_imagef(out_wf_rgb, xy, (float4)(r, g, b, a));
+        write_imagef(out_wf_rgb, xy, (float4)(r, g, b, a));
+    }
 
     // ===== RGB PARADE =====
 
-    {
+    if (features & RENDER_FEATURE_WF_RGBPARADE) {
         uint src_x   = (x % (WF_WIDTH / 3)) * 3;
         uint src_gid = y * gx + src_x;
 
@@ -79,7 +83,7 @@ __kernel void createWaveformImages(
 
     // ===== RGB BLACKLEVEL =====
 
-    {
+    if (features & RENDER_FEATURE_WF_RGBBLACKS) {
         uint src_y   = y * 0.137255f;
         uint src_gid = src_y * gx + x;
 
@@ -93,7 +97,7 @@ __kernel void createWaveformImages(
 
     // ===== YUV PARADE =====
 
-    {
+    if (features & RENDER_FEATURE_WF_YUVPARADE) {
         uint src_x   = (x % (WF_WIDTH / 3)) * 3;
         uint src_gid = y * gx + src_x;
 
@@ -148,7 +152,8 @@ __kernel void createScopeImages(
     write_only image2d_t out_sc_uv,
     write_only image2d_t out_sc_xyz,
     write_only image2d_t out_sc_dia,
-    uint src_width, float brightness) {
+    uint src_width, float brightness,
+    RenderFeatureFlags features) {
 
     size_t x = get_global_id(0);
     size_t y = get_global_id(1);
@@ -167,7 +172,7 @@ __kernel void createScopeImages(
 
     // ===== UV SCOPE =====
 
-    {
+    if (features & RENDER_FEATURE_SC_UV) {
         rgba.w = (float)in_hist2d_uv_rgba[rgbaPB + 3] / 255.f * brightness;
 
         rgba.xyz = yuv_709_Limited_to_RGB_709((float3)(0.5f, x / 255.f, (SC_HEIGHT - y) / 255.f));
@@ -177,7 +182,7 @@ __kernel void createScopeImages(
 
     // ===== XYZ SCOPE =====
 
-    {
+    if (features & RENDER_FEATURE_SC_XYZ) {
         rgba.w = (float)in_hist2d_xyz_rgba[rgbaPB + 3] / 255.f * brightness;
 
         rgba.xyz = xy_to_RGB_709(XY.x, XY.y, 0.5f);
@@ -187,7 +192,7 @@ __kernel void createScopeImages(
 
     // ===== DIAMOND SCOPE =====
 
-    {
+    if (features & RENDER_FEATURE_SC_DIA) {
         rgba.w = (float)in_hist2d_dia_rgba[rgbaPB + 3] / 255.f * brightness;
 
         if (XY.y <= 0.5f) {

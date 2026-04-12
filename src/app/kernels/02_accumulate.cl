@@ -23,7 +23,8 @@ __kernel void accumulateWaveforms(
     __global uint*        out_hist_yuv,
     uint src_width, uint src_height,
     uchar mask_enabled, cl_rect_2D mask_rect,
-    RenderFeatureFlags features) {
+    RenderFeatureFlags features,
+    uint analysis_step) {
 
     __local uint local_hist_rgb_r[WAVEFORM_BINS]; // 1KB
     __local uint local_hist_rgb_g[WAVEFORM_BINS]; // 1KB
@@ -33,8 +34,8 @@ __kernel void accumulateWaveforms(
     __local uint local_hist_yuv_u[WAVEFORM_BINS]; // 1KB
     __local uint local_hist_yuv_v[WAVEFORM_BINS]; // 1KB
 
-    size_t x   = get_global_id(0);
-    size_t y   = get_global_id(1);
+    size_t x   = get_global_id(0) * analysis_step;
+    size_t y   = get_global_id(1) * analysis_step;
     size_t gid = y * src_width + x;
 
     size_t yuvPB  = gid * 3;
@@ -107,10 +108,11 @@ __kernel void accumulateUVScope(
     uint                  src_width,
     uint                  src_height,
     uchar                 mask_enabled,
-    cl_rect_2D            mask_rect) {
+    cl_rect_2D            mask_rect,
+    uint                  analysis_step) {
 
-    size_t x = get_global_id(0);
-    size_t y = get_global_id(1);
+    size_t x = get_global_id(0) * analysis_step;
+    size_t y = get_global_id(1) * analysis_step;
 
     if (x >= src_width || y >= src_height)
         return;
@@ -144,10 +146,11 @@ __kernel void accumulateXYZScope(
     uint                  src_height,
     uchar                 mask_enabled,
     cl_rect_2D            mask_rect,
-    int                   colorspace) {
+    int                   colorspace,
+    uint                  analysis_step) {
 
-    size_t x = get_global_id(0);
-    size_t y = get_global_id(1);
+    size_t x = get_global_id(0) * analysis_step;
+    size_t y = get_global_id(1) * analysis_step;
 
     if (x >= src_width || y >= src_height)
         return;
@@ -182,9 +185,10 @@ __kernel void accumulateDiaScope(
     uint                  src_width,
     uint                  src_height,
     uchar                 mask_enabled,
-    cl_rect_2D            mask_rect) {
-    size_t x = get_global_id(0);
-    size_t y = get_global_id(1);
+    cl_rect_2D            mask_rect,
+    uint                  analysis_step) {
+    size_t x = get_global_id(0) * analysis_step;
+    size_t y = get_global_id(1) * analysis_step;
 
     if (x >= src_width || y >= src_height)
         return;

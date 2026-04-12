@@ -12,6 +12,19 @@ namespace scpp {
 
 class Application {
 private:
+    enum class ScopeLayoutPreset {
+        FourUpReview,
+        SixUpQC,
+        AllScopesGrid,
+        WaveformColumns
+    };
+
+    struct WindowPlacement {
+        std::string_view name{};
+        ImVec2           pos{};
+        ImVec2           size{};
+    };
+
 #if defined(__APPLE__)
     constexpr static auto m_glslVersion = "#version 150"sv;
 #else
@@ -37,6 +50,10 @@ private:
     bool m_showSCUV{true};
     bool m_showSCXYZ{true};
     bool m_showSCDia{true};
+    bool m_showImGuiMetrics{false};
+
+    std::array<WindowPlacement, 16> m_pendingWindowPlacements{};
+    size_t                          m_pendingWindowPlacementCount{0u};
 
     std::unique_ptr<scpp::OpenCLDeviceProvider> m_openclDeviceProvider = nullptr;
 
@@ -44,7 +61,7 @@ private:
     std::unique_ptr<VideoSource>    m_source         = nullptr;
 
 public:
-    Application();
+    explicit Application(std::optional<std::filesystem::path> initialVideoFile = std::nullopt);
 
     ~Application();
 
@@ -56,6 +73,12 @@ private:
     auto InitImGui() -> bool;
 
     void SetImGuiStyle();
+
+    auto StartVideoFileSource(const std::filesystem::path& path) noexcept -> bool;
+
+    void QueueScopeLayout(ScopeLayoutPreset preset) noexcept;
+
+    void ApplyPendingWindowPlacement(std::string_view windowName) const noexcept;
 
     auto LoadFonts() -> bool;
 

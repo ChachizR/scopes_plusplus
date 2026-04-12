@@ -37,8 +37,11 @@ CLGLTextureRGBA::CLGLTextureRGBA(Dims2D size, const cl::Context& context, std::s
 
     if (res != CL_SUCCESS) {
         std::println("Failed to create OpenCL ImageGL: {}", res);
+        clImageValid = false;
+        return;
     }
 
+    clImageValid = true;
     std::println("Created OpenCL texture {} '{}'\t with size {}x{}", glTextureID, description, size.width, size.height);
 }
 
@@ -49,8 +52,10 @@ CLGLTextureRGBA::CLGLTextureRGBA(CLGLTextureRGBA&& rhs) noexcept
     : description{rhs.description}
     , glTextureID{rhs.glTextureID}
     , clImageGL{std::move(rhs.clImageGL)}
+    , clImageValid{rhs.clImageValid}
     , size{rhs.size} {
     rhs.glTextureID = 0; // Transfer ownership explicitly
+    rhs.clImageValid = false;
 }
 
 // Move assignment operator
@@ -61,12 +66,14 @@ CLGLTextureRGBA& CLGLTextureRGBA::operator=(CLGLTextureRGBA&& rhs) noexcept {
             std::println("Deleted OpenGL texture (move-assignment): {}", glTextureID);
         }
 
-        description = rhs.description;
-        glTextureID = rhs.glTextureID;
-        clImageGL   = std::move(rhs.clImageGL);
-        size        = rhs.size;
+        description  = rhs.description;
+        glTextureID  = rhs.glTextureID;
+        clImageGL    = std::move(rhs.clImageGL);
+        clImageValid = rhs.clImageValid;
+        size         = rhs.size;
 
-        rhs.glTextureID = 0; // Transfer ownership explicitly
+        rhs.glTextureID   = 0; // Transfer ownership explicitly
+        rhs.clImageValid = false;
     }
     return *this;
 }
@@ -78,6 +85,7 @@ void CLGLTextureRGBA::Resize(Dims2D newSize, const cl::Context& context) {
 
     size = newSize;
     DeleteGLRGBATexture(glTextureID);
+    clImageValid = false;
     CreateNewGLRGBATexture(glTextureID, size);
 
     // Recreate the OpenCL image
@@ -93,6 +101,7 @@ void CLGLTextureRGBA::Resize(Dims2D newSize, const cl::Context& context) {
 
     if (res != CL_SUCCESS) {
         std::println("Failed to recreate OpenCL ImageGL: {}", res);
+        return;
     }
 
     const auto width  = clImageGL.getImageInfo<CL_IMAGE_WIDTH>(&res);
@@ -102,6 +111,7 @@ void CLGLTextureRGBA::Resize(Dims2D newSize, const cl::Context& context) {
         return;
     }
 
+    clImageValid = true;
     std::println("Resized OpenCL texture {}: {} to {}x{}", glTextureID, description, size.width, size.height);
     std::println("OpenCL ImageGL size: {}x{}", width, height);
 }

@@ -13,6 +13,14 @@ struct VideoSourceStats {
     float        renderDurationMS{0.f};
     float        avgMaxRenderFPS{0.f};
     float        avgRenderDurationMS{0.f};
+    float        decodeConvertMS{0.f};
+    float        decodeCopyMS{0.f};
+    float        avgDecodeConvertMS{0.f};
+    float        avgDecodeCopyMS{0.f};
+    uint64_t     decodedFrameCount{0u};
+    uint64_t     renderedFrameCount{0u};
+    uint64_t     droppedFrameCount{0u};
+    uint32_t     queuedFrameCount{0u};
 
     void SetRenderTimings(Clock::duration renderDuration) noexcept {
         renderDurationMS = static_cast<float>(std::chrono::duration_cast<std::chrono::microseconds>(renderDuration).count()) / 1e3f;
@@ -25,6 +33,14 @@ struct VideoSourceStats {
             maxRenderFPS = 0.f;
 
         avgMaxRenderFPS = (avgMaxRenderFPS * 0.99f) + (maxRenderFPS * 0.01f);
+    }
+
+    void SetDecodeTimings(Clock::duration convertDuration, Clock::duration copyDuration) noexcept {
+        decodeConvertMS = static_cast<float>(std::chrono::duration_cast<std::chrono::microseconds>(convertDuration).count()) / 1e3f;
+        decodeCopyMS    = static_cast<float>(std::chrono::duration_cast<std::chrono::microseconds>(copyDuration).count()) / 1e3f;
+
+        avgDecodeConvertMS = (avgDecodeConvertMS * 0.99f) + (decodeConvertMS * 0.01f);
+        avgDecodeCopyMS    = (avgDecodeCopyMS * 0.99f) + (decodeCopyMS * 0.01f);
     }
 };
 

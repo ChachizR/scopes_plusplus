@@ -11,6 +11,7 @@ FetchContent_MakeAvailable(Catch2)
 file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "./*.cpp" "./*.hpp")
 
 add_executable(tests ${TEST_SOURCES})
+scpp_enable_clang_tidy(tests)
 
 target_link_libraries(
     tests PRIVATE

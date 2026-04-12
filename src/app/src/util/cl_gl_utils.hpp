@@ -6,8 +6,9 @@
 namespace scpp {
 struct CLGLTextureRGBA {
     std::string_view description{};
-    GLuint           glTextureID;
+    GLuint           glTextureID{0};
     cl::ImageGL      clImageGL;
+    bool             clImageValid{false};
 
     Dims2D size;
 
@@ -28,5 +29,8 @@ struct CLGLTextureRGBA {
 
     // should be called on the main gl thread
     void Resize(Dims2D newSize, const cl::Context& context);
+
+    [[nodiscard]]
+    auto IsValid() const noexcept -> bool { return clImageValid; }
 };
 } // namespace scpp

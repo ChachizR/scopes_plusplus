@@ -113,6 +113,39 @@ struct RenderSettings {
     SourceColorSpace   colorSpace{SourceColorSpace::BT709};
     SourceYUVRange     yuvRange{SourceYUVRange::Limited};
     RenderFeatureFlags enabledFeatures{RenderFeature::All};
+    uint32_t           analysisFrameInterval{1u};
+    uint32_t           analysisResolutionDivisor{1u};
+};
+
+struct OpenCLPipelineTimingStats {
+    float uploadMS{0.f};
+    float resetMS{0.f};
+    float acquireGLMS{0.f};
+    float convertMS{0.f};
+    float waveformAccumMS{0.f};
+    float waveformImageMS{0.f};
+    float scopeUVMS{0.f};
+    float scopeXYZMS{0.f};
+    float scopeDiaMS{0.f};
+    float scopeImageMS{0.f};
+    float falseColorMS{0.f};
+    float releaseGLMS{0.f};
+    float finishWaitMS{0.f};
+    float totalGPUCommandMS{0.f};
+
+    [[nodiscard]]
+    auto waveformMS() const noexcept -> float {
+        return waveformAccumMS + waveformImageMS;
+    }
+
+    [[nodiscard]]
+    auto scopeMS() const noexcept -> float {
+        return scopeUVMS + scopeXYZMS + scopeDiaMS + scopeImageMS;
+    }
+
+    void Reset() noexcept {
+        *this = {};
+    }
 };
 
 constexpr static inline void SetRenderFeatureFlag(RenderFeatureFlags& flags, RenderFeature feature, bool enabled = true) noexcept {
@@ -272,6 +305,10 @@ private:
     Dims2D       m_sourceDims{c_DefaultSourceSize};
     SourceFormat m_sourceFormat{SourceFormat::RGBA_8888};
 
+    std::string m_lastPipelineStatus{"Waiting for source frame"};
+    uint64_t    m_submittedFrameCount{0u};
+    OpenCLPipelineTimingStats m_lastTimingStats{};
+
     [[nodiscard]]
     constexpr inline auto SelectConvertKernel(SourceFormat sourceFormat) -> cl::Kernel&;
 
@@ -304,17 +341,24 @@ public:
 
 private:
     void UpdateGLObjects() {
-        m_glObjects = {
-            m_targetTextures->sourcePreview.clImageGL,
-            m_targetTextures->falseColor.clImageGL,
-            m_targetTextures->wfLuma.clImageGL,
-            m_targetTextures->wfRGB.clImageGL,
-            m_targetTextures->wfRGBParade.clImageGL,
-            m_targetTextures->wfRGBBlacks.clImageGL,
-            m_targetTextures->wfYUVParade.clImageGL,
-            m_targetTextures->scUV.clImageGL,
-            m_targetTextures->scXYZ.clImageGL,
-            m_targetTextures->scDia.clImageGL};
+        m_glObjects.clear();
+
+        auto addImage = [this](const CLGLTextureRGBA& texture) {
+            if (texture.IsValid()) {
+                m_glObjects.push_back(texture.clImageGL);
+            }
+        };
+
+        addImage(m_targetTextures->sourcePreview);
+        addImage(m_targetTextures->falseColor);
+        addImage(m_targetTextures->wfLuma);
+        addImage(m_targetTextures->wfRGB);
+        addImage(m_targetTextures->wfRGBParade);
+        addImage(m_targetTextures->wfRGBBlacks);
+        addImage(m_targetTextures->wfYUVParade);
+        addImage(m_targetTextures->scUV);
+        addImage(m_targetTextures->scXYZ);
+        addImage(m_targetTextures->scDia);
     }
 
     void ResizeBuffers();
@@ -323,6 +367,21 @@ public:
     [[nodiscard]]
     auto GetTargetTextures() const noexcept -> const TargetTextures* const {
         return m_targetTextures.get();
+    }
+
+    [[nodiscard]]
+    auto GetLastPipelineStatus() const noexcept -> std::string_view {
+        return m_lastPipelineStatus;
+    }
+
+    [[nodiscard]]
+    auto GetSubmittedFrameCount() const noexcept -> uint64_t {
+        return m_submittedFrameCount;
+    }
+
+    [[nodiscard]]
+    auto GetLastTimingStats() const noexcept -> const OpenCLPipelineTimingStats& {
+        return m_lastTimingStats;
     }
 
     void ExecutePipeline(const uint8_t* sourceData, Dims2D sourceSize, SourceFormat sourceFormat, uint32_t lineStrideBytes, RenderSettings renderSettings);

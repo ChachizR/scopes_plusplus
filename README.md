@@ -22,7 +22,9 @@ This project is organized as a standard CMake project and produces a single exec
 - [x] 32-Bit float based processing pipeline
 - [x] Customizable & dockable user-interface
 - [x] Built-in live test-pattern source
-- [ ] Network input source integration
+- [x] FFmpeg video-file source
+- [x] SRT stream URL input through FFmpeg
+- [x] Linux OpenCL 3 build path
 
 ## Roadmap
 
@@ -35,7 +37,8 @@ This project is organized as a standard CMake project and produces a single exec
 
 ## Known issues
 
-- Mismatch between OpenGL and OpenCL device selection when multiple GPUs are present. This causes errors/crashes.
+- Mismatch between OpenGL and OpenCL device selection when multiple GPUs are present can still cause OpenCL/OpenGL interop failures.
+- HLS playlist playback is intentionally disabled in this branch. The current network path is focused on SRT feeds.
 
 
 ## Overview
@@ -67,6 +70,50 @@ cmake --build build-macos --parallel
 - On Apple builds, NDI is disabled by default in this repository and the app exposes a built-in animated test-pattern source so the renderer and UI remain usable out of the box.
 - Apple only exposes OpenCL 1.2, so the build lowers the OpenCL C++ binding target accordingly.
 
+## Quickstart (Linux OpenCL 3)
+
+This branch contains the current Linux OpenCL 3 + FFmpeg port. It uses GLFW/OpenGL for presentation, OpenCL/OpenGL interop for GPU processing, and FFmpeg for local video files plus SRT feeds.
+
+Install the system packages needed by CMake, OpenGL/OpenCL, X11/GLX, and FFmpeg. On Ubuntu/Debian-style systems:
+
+```bash
+sudo apt install \
+  build-essential cmake git pkg-config \
+  libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
+  libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+  ocl-icd-opencl-dev
+```
+
+You also need a working OpenCL runtime for your GPU, such as your vendor driver package. The build fetches Khronos OpenCL headers, but the OpenCL ICD/runtime must come from the system or GPU vendor.
+
+Build and test:
+
+```bash
+git clone https://github.com/MindStudioOfficial/scopes_plusplus.git
+cd scopes_plusplus
+cmake -S . -B build-linux-opencl3-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-linux-opencl3-release --parallel
+ctest --test-dir build-linux-opencl3-release --output-on-failure
+```
+
+Run with a local file:
+
+```bash
+./build-linux-opencl3-release/src/app/scopes++ /absolute/path/video.mp4
+```
+
+Run with an SRT feed:
+
+```bash
+./build-linux-opencl3-release/src/app/scopes++ 'srt://127.0.0.1:9000?mode=caller&latency=200000'
+```
+
+Notes for Linux:
+
+- GLFW is forced to X11/GLX on Linux so OpenCL/OpenGL interop receives GLX handles that match the OpenCL context setup.
+- NDI is disabled by default on non-Windows builds.
+- HLS URLs and `.m3u`/`.m3u8` playlists are rejected on this branch. SRT is the supported network ingest path.
+
 ## Quickstart (Windows)
 
 ```powershell
@@ -92,7 +139,7 @@ cmake --build build --parallel --config Release
 ```
 
 - OpenCL kernels and `assets/` are copied to the build output via CMake post-build steps/targets.
-- `SCPP_ENABLE_NDI` defaults to `ON` on Windows and `OFF` on Apple platforms.
+- `SCPP_ENABLE_NDI` defaults to `ON` on Windows and `OFF` on non-Windows platforms.
 
 ## Development patterns & conventions
 
@@ -115,7 +162,7 @@ cmake --build build --target tests --config Debug
 Contributions are welcome. Please open issues for discussion before submitting larger changes. For small fixes, open a pull request with a clear description of the change and how it was tested.
 
 Suggested PR checklist:
-- Build succeeds in Debug and Release on Windows, and in the default macOS configuration on Intel Macs when changing shared runtime code.
+- Build succeeds in Debug and Release on Windows, Linux, and in the default macOS configuration on Intel Macs when changing shared runtime code.
 - Any new runtime asset or OpenCL kernel is added to the correct `assets/` or `kernels/` folder and tested.
 - Follow existing code style and minimal, focused commits.
 

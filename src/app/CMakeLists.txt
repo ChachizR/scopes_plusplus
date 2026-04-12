@@ -19,6 +19,7 @@ if(NOT SCPP_ENABLE_NDI)
 endif()
 
 add_executable(${PROJECT_NAME} ./src/main.cpp ${APP_SOURCES})
+scpp_enable_clang_tidy(${PROJECT_NAME})
 target_sources(${PROJECT_NAME} PRIVATE ${APP_HEADERS})
 target_sources(${PROJECT_NAME} PRIVATE ${APP_CL_SOURCES})
 
@@ -60,17 +61,16 @@ find_package(OpenGL REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::GL)
 
 # ## OpenCL
-find_package(OpenCL REQUIRED)
+find_library(OpenCL_LIBRARY REQUIRED NAMES OpenCL)
 
 target_include_directories(${PROJECT_NAME}
     PRIVATE
     $<TARGET_PROPERTY:opencl_headers,INTERFACE_INCLUDE_DIRECTORIES>
-    ${OpenCL_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
-    ${OpenCL_LIBRARIES}
+    ${OpenCL_LIBRARY}
 )
 
 # ## GLM

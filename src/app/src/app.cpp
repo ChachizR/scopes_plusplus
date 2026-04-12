@@ -3,7 +3,7 @@
 
 namespace scpp {
 
-Application::Application() {
+Application::Application(std::optional<std::filesystem::path> initialVideoFile) {
     if (!InitGLFW()) {
         std::println("Failed to initialize GLFW");
         throw std::runtime_error("GLFW initialization failed");
@@ -25,6 +25,15 @@ Application::Application() {
     }
 
     m_sourceProvider = std::make_unique<SourceProvider>();
+
+    if (initialVideoFile) {
+        const auto pathText = initialVideoFile->string();
+        const auto copySize = (std::min)(pathText.size(), m_videoFilePath.size() - 1u);
+        std::copy_n(pathText.data(), copySize, m_videoFilePath.data());
+        m_videoFilePath[copySize] = '\0';
+
+        StartVideoFileSource(*initialVideoFile);
+    }
 }
 
 Application::~Application() {
@@ -34,6 +43,11 @@ Application::~Application() {
 
 auto Application::InitGLFW() -> bool {
     glfwSetErrorCallback(GLFWErrorCallback);
+
+#if defined(__linux__) && defined(GLFW_PLATFORM_X11)
+    // Linux OpenCL/GL interop below creates the CL context from GLX handles.
+    glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+#endif
 
     if (!glfwInit()) {
         std::println("Failed to initialize GLFW");
@@ -210,6 +224,163 @@ void Application::SetImGuiStyle() {
     colors[ImGuiCol_TableBorderStrong] = rgba(128, 128, 128, 0.5f);
 }
 
+auto Application::StartVideoFileSource(const std::filesystem::path& path) noexcept -> bool {
+    if (m_source) {
+        m_source->Stop();
+    }
+
+    m_source = m_sourceProvider->CreateVideoFileSource(*m_openclDeviceProvider, path);
+    if (!m_source) {
+        std::println("Failed to create video file source");
+        return false;
+    }
+
+    if (m_source->Start() != ErrorCode::None) {
+        std::println("Failed to start video file source: {}", path.string());
+        m_source.reset();
+        return false;
+    }
+
+    return true;
+}
+
+void Application::QueueScopeLayout(ScopeLayoutPreset preset) noexcept {
+    auto showOnly = [this](bool sourcePreview, bool falseColor, bool wfLuma, bool wfRgb, bool wfRgbParade, bool wfRgbBlacks, bool wfYuvParade, bool scUV, bool scXYZ, bool scDia) {
+        m_showSourcePreview = sourcePreview;
+        m_showFalseColor    = falseColor;
+        m_showWFLuma        = wfLuma;
+        m_showWFRgb         = wfRgb;
+        m_showWFRgbParade   = wfRgbParade;
+        m_showWFRgbBlacks   = wfRgbBlacks;
+        m_showWFYuvParade   = wfYuvParade;
+        m_showSCUV          = scUV;
+        m_showSCXYZ         = scXYZ;
+        m_showSCDia         = scDia;
+    };
+
+    m_pendingWindowPlacementCount = 0u;
+
+    const auto* viewport = ImGui::GetMainViewport();
+    const ImVec2 origin  = viewport->WorkPos;
+    const ImVec2 extent  = viewport->WorkSize;
+
+    constexpr float gap = 8.0f;
+
+    auto place = [this](std::string_view name, float x, float y, float w, float h) {
+        if (m_pendingWindowPlacementCount >= m_pendingWindowPlacements.size()) {
+            return;
+        }
+
+        m_pendingWindowPlacements[m_pendingWindowPlacementCount++] = WindowPlacement{
+            .name = name,
+            .pos  = ImVec2(x, y),
+            .size = ImVec2((std::max)(80.0f, w), (std::max)(80.0f, h))};
+    };
+
+    auto grid = [&](std::span<const std::string_view> names, int columns) {
+        const int rows = static_cast<int>((names.size() + static_cast<size_t>(columns) - 1u) / static_cast<size_t>(columns));
+        const float cellW = (extent.x - gap * static_cast<float>(columns + 1)) / static_cast<float>(columns);
+        const float cellH = (extent.y - gap * static_cast<float>(rows + 1)) / static_cast<float>(rows);
+
+        for (size_t index = 0; index < names.size(); ++index) {
+            const int col = static_cast<int>(index % static_cast<size_t>(columns));
+            const int row = static_cast<int>(index / static_cast<size_t>(columns));
+            place(names[index],
+                  origin.x + gap + static_cast<float>(col) * (cellW + gap),
+                  origin.y + gap + static_cast<float>(row) * (cellH + gap),
+                  cellW,
+                  cellH);
+        }
+    };
+
+    switch (preset) {
+    case ScopeLayoutPreset::FourUpReview: {
+        showOnly(true, true, true, false, true, false, false, false, false, false);
+
+        constexpr auto names = std::to_array<std::string_view>({
+            "Source Preview"sv,
+            "False Color"sv,
+            "Luminance Waveform"sv,
+            "RGB Parade"sv,
+        });
+        grid(names, 2);
+        break;
+    }
+    case ScopeLayoutPreset::SixUpQC: {
+        showOnly(true, true, true, false, true, false, false, true, true, false);
+
+        constexpr auto names = std::to_array<std::string_view>({
+            "Source Preview"sv,
+            "False Color"sv,
+            "Luminance Waveform"sv,
+            "RGB Parade"sv,
+            "UV Vectorscope"sv,
+            "CIE 1931 Chromaticity"sv,
+        });
+        grid(names, 3);
+        break;
+    }
+    case ScopeLayoutPreset::AllScopesGrid: {
+        showOnly(true, true, true, true, true, true, true, true, true, true);
+
+        constexpr auto names = std::to_array<std::string_view>({
+            "Source Preview"sv,
+            "False Color"sv,
+            "Luminance Waveform"sv,
+            "RGB Waveform"sv,
+            "RGB Parade"sv,
+            "RGB Blacklevel"sv,
+            "YUV Parade"sv,
+            "UV Vectorscope"sv,
+            "CIE 1931 Chromaticity"sv,
+            "Double Diamond"sv,
+        });
+        grid(names, 4);
+        break;
+    }
+    case ScopeLayoutPreset::WaveformColumns: {
+        showOnly(true, false, true, true, true, true, true, false, false, false);
+
+        const float previewW = extent.x * 0.42f - gap * 1.5f;
+        const float waveW    = extent.x - previewW - gap * 3.0f;
+        const float waveH    = (extent.y - gap * 6.0f) / 5.0f;
+
+        place("Source Preview"sv, origin.x + gap, origin.y + gap, previewW, extent.y - gap * 2.0f);
+
+        constexpr auto names = std::to_array<std::string_view>({
+            "Luminance Waveform"sv,
+            "RGB Waveform"sv,
+            "RGB Parade"sv,
+            "RGB Blacklevel"sv,
+            "YUV Parade"sv,
+        });
+
+        for (size_t index = 0; index < names.size(); ++index) {
+            place(names[index],
+                  origin.x + previewW + gap * 2.0f,
+                  origin.y + gap + static_cast<float>(index) * (waveH + gap),
+                  waveW,
+                  waveH);
+        }
+        break;
+    }
+    }
+}
+
+void Application::ApplyPendingWindowPlacement(std::string_view windowName) const noexcept {
+    for (size_t index = 0; index < m_pendingWindowPlacementCount; ++index) {
+        const auto& placement = m_pendingWindowPlacements[index];
+        if (placement.name != windowName) {
+            continue;
+        }
+
+        ImGui::SetNextWindowDockID(0, ImGuiCond_Always);
+        ImGui::SetNextWindowPos(placement.pos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(placement.size, ImGuiCond_Always);
+        return;
+    }
+}
+
 auto Application::LoadFonts() -> bool {
     ImGuiIO& io = ImGui::GetIO();
 
@@ -257,7 +428,9 @@ void Application::Run() {
 
         UI_Main();
 
-        ImGui::ShowMetricsWindow();
+        if (m_showImGuiMetrics) {
+            ImGui::ShowMetricsWindow(&m_showImGuiMetrics);
+        }
 
         // render stuff
 
@@ -295,6 +468,8 @@ void Application::UI_Main() noexcept {
         UI_SourceStats();
         UI_RenderSettings();
     }
+
+    m_pendingWindowPlacementCount = 0u;
 }
 
 void Application::UI_MainMenuBar() noexcept {
@@ -321,6 +496,24 @@ void Application::UI_MainMenuBar() noexcept {
         ImGui::MenuItem("UV Vectorscope", nullptr, &m_showSCUV);
         ImGui::MenuItem("CIE 1931 Chromaticity", nullptr, &m_showSCXYZ);
         ImGui::MenuItem("Double Diamond", nullptr, &m_showSCDia);
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Layouts")) {
+            if (ImGui::MenuItem("4-Up Review")) {
+                QueueScopeLayout(ScopeLayoutPreset::FourUpReview);
+            }
+            if (ImGui::MenuItem("6-Up QC")) {
+                QueueScopeLayout(ScopeLayoutPreset::SixUpQC);
+            }
+            if (ImGui::MenuItem("All Scopes Grid")) {
+                QueueScopeLayout(ScopeLayoutPreset::AllScopesGrid);
+            }
+            if (ImGui::MenuItem("Waveform Columns")) {
+                QueueScopeLayout(ScopeLayoutPreset::WaveformColumns);
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::Separator();
+        ImGui::MenuItem("ImGui Metrics", nullptr, &m_showImGuiMetrics);
         ImGui::EndMenu();
     }
 
@@ -347,6 +540,7 @@ void Application::SyncRenderFeaturesFromUI() noexcept {
 }
 
 void Application::UI_Settings() const noexcept {
+    ApplyPendingWindowPlacement("Settings"sv);
     ImGui::Begin("Settings");
 
     ImGui::End();
@@ -355,24 +549,15 @@ void Application::UI_Settings() const noexcept {
 void Application::UI_Sources() noexcept {
     const auto sources = m_sourceProvider->GetSources();
 
+    ApplyPendingWindowPlacement("Sources"sv);
     ImGui::Begin("Sources");
 
-    ImGui::SeparatorText("Video File");
+    ImGui::SeparatorText("File / SRT URL");
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::InputText("##video-file-path", m_videoFilePath.data(), m_videoFilePath.size());
 
-    if (ImGui::Button("Open Video File")) {
-        if (m_source) {
-            m_source->Stop();
-        }
-
-        m_source = m_sourceProvider->CreateVideoFileSource(*m_openclDeviceProvider, m_videoFilePath.data());
-        if (!m_source) {
-            std::println("Failed to create video file source");
-        } else if (m_source->Start() != ErrorCode::None) {
-            std::println("Failed to start video file source: {}", m_videoFilePath.data());
-            m_source.reset();
-        }
+    if (ImGui::Button("Open Source")) {
+        StartVideoFileSource(m_videoFilePath.data());
     }
 
     ImGui::Spacing();
@@ -413,6 +598,7 @@ void Application::UI_Sources() noexcept {
 void Application::UI_SourceStats() noexcept {
     const auto& sourceStats = m_source->GetStats();
     ImGui::SetNextWindowSizeConstraints(ImVec2(200, 50), c_uiMaxSize);
+    ApplyPendingWindowPlacement("Source Stats"sv);
     ImGui::Begin("Source Stats", nullptr, ImGuiWindowFlags_NoCollapse);
     ImGui::Text("Name: %s", m_source->GetName().data());
     ImGui::Text("Dimensions: %ux%u", sourceStats.sourceDims.width, sourceStats.sourceDims.height);
@@ -423,12 +609,43 @@ void Application::UI_SourceStats() noexcept {
     ImGui::Text("Render Duration: %.4f ms", sourceStats.renderDurationMS);
     ImGui::Text("Avg Max Render FPS: %.2f", sourceStats.avgMaxRenderFPS);
     ImGui::Text("Avg Render Duration: %.4f ms", sourceStats.avgRenderDurationMS);
+    ImGui::SeparatorText("Decode");
+    ImGui::Text("sws_scale: %.4f ms avg %.4f", sourceStats.decodeConvertMS, sourceStats.avgDecodeConvertMS);
+    ImGui::Text("Frame copy: %.4f ms avg %.4f", sourceStats.decodeCopyMS, sourceStats.avgDecodeCopyMS);
+    ImGui::Text("Decoded Frames: %llu", static_cast<unsigned long long>(sourceStats.decodedFrameCount));
+    ImGui::Text("Rendered Frames: %llu", static_cast<unsigned long long>(sourceStats.renderedFrameCount));
+    ImGui::Text("Dropped Frames: %llu", static_cast<unsigned long long>(sourceStats.droppedFrameCount));
+    ImGui::Text("Queued Frames: %u", sourceStats.queuedFrameCount);
+
+    const auto& sourceRenderer = m_source->GetRenderer();
+    ImGui::Text("Submitted Frames: %llu", static_cast<unsigned long long>(sourceRenderer.GetSubmittedFrameCount()));
+    const auto pipelineStatus = sourceRenderer.GetLastPipelineStatus();
+    ImGui::TextWrapped("Pipeline: %.*s", static_cast<int>(pipelineStatus.size()), pipelineStatus.data());
+    const auto& clTiming = sourceRenderer.GetLastTimingStats();
+    ImGui::SeparatorText("OpenCL");
+    ImGui::Text("GPU commands: %.4f ms", clTiming.totalGPUCommandMS);
+    ImGui::Text("Upload: %.4f ms", clTiming.uploadMS);
+    ImGui::Text("Reset: %.4f ms", clTiming.resetMS);
+    ImGui::Text("Acquire GL: %.4f ms", clTiming.acquireGLMS);
+    ImGui::Text("Convert: %.4f ms", clTiming.convertMS);
+    ImGui::Text("Waveforms: %.4f ms", clTiming.waveformMS());
+    ImGui::Text("  Accumulate: %.4f ms", clTiming.waveformAccumMS);
+    ImGui::Text("  Image: %.4f ms", clTiming.waveformImageMS);
+    ImGui::Text("Scopes: %.4f ms", clTiming.scopeMS());
+    ImGui::Text("  UV: %.4f ms", clTiming.scopeUVMS);
+    ImGui::Text("  XYZ: %.4f ms", clTiming.scopeXYZMS);
+    ImGui::Text("  Diamond: %.4f ms", clTiming.scopeDiaMS);
+    ImGui::Text("  Image: %.4f ms", clTiming.scopeImageMS);
+    ImGui::Text("False Color: %.4f ms", clTiming.falseColorMS);
+    ImGui::Text("Release GL: %.4f ms", clTiming.releaseGLMS);
+    ImGui::Text("CPU wait at finish: %.4f ms", clTiming.finishWaitMS);
     ImGui::End();
 }
 
 void Application::UI_RenderSettings() noexcept {
     auto& renderSettings = m_source->GetRenderSettings();
 
+    ApplyPendingWindowPlacement("Render Settings"sv);
     ImGui::Begin("Render Settings", nullptr, ImGuiWindowFlags_NoCollapse);
     ImGui::SeparatorText("Source");
 
@@ -457,6 +674,32 @@ void Application::UI_RenderSettings() noexcept {
         }
         ImGui::EndCombo();
     }
+
+    ImGui::SeparatorText("Performance");
+    const auto currentIntervalLabel = std::format("Every {} frame{}", renderSettings.analysisFrameInterval, renderSettings.analysisFrameInterval == 1u ? "" : "s");
+    if (ImGui::BeginCombo("Scope Refresh", currentIntervalLabel.c_str())) {
+        constexpr auto intervals = std::to_array<uint32_t>({1u, 2u, 4u, 8u, 16u});
+        for (const auto interval : intervals) {
+            const auto label = std::format("Every {} frame{}", interval, interval == 1u ? "" : "s");
+            if (ImGui::Selectable(label.c_str(), renderSettings.analysisFrameInterval == interval)) {
+                renderSettings.analysisFrameInterval = interval;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    const auto currentResolutionLabel = std::format("1/{}", renderSettings.analysisResolutionDivisor);
+    if (ImGui::BeginCombo("Analysis Resolution", renderSettings.analysisResolutionDivisor == 1u ? "Full" : currentResolutionLabel.c_str())) {
+        constexpr auto divisors = std::to_array<uint32_t>({1u, 2u, 4u});
+        for (const auto divisor : divisors) {
+            const auto label = divisor == 1u ? std::string{"Full"} : std::format("1/{}", divisor);
+            if (ImGui::Selectable(label.c_str(), renderSettings.analysisResolutionDivisor == divisor)) {
+                renderSettings.analysisResolutionDivisor = divisor;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::TextWrapped("Source preview stays live; analytical scopes can update less often and sample fewer pixels.");
 
     ImGui::SeparatorText("False Color");
 
@@ -491,6 +734,7 @@ void Application::UI_SourcePreview(const scpp::TargetTextures* sourceTextures) n
     auto& sourcePreview = sourceTextures->sourcePreview;
 
     ImGui::SetNextWindowSizeConstraints(ImVec2(160, 32 + 90), c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&sourceAspect);
+    ApplyPendingWindowPlacement(sourcePreview.description);
     if (!ImGui::Begin(sourcePreview.description.data(), &m_showSourcePreview, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         return;
@@ -531,6 +775,7 @@ void Application::UI_FalseColor(const scpp::TargetTextures* sourceTextures) noex
     };
 
     ImGui::SetNextWindowSizeConstraints(ImVec2(160 + kScaleTotalWidth, 32 + 90), c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&sourceAspect);
+    ApplyPendingWindowPlacement(falseColorTex.description);
 
     auto falseColorVisible = ImGui::Begin(falseColorTex.description.data(), &m_showFalseColor, ImGuiWindowFlags_NoCollapse);
 
@@ -652,6 +897,7 @@ void Application::UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexc
     if (m_showWFLuma) {
         auto& wfLuma = sourceTextures->wfLuma;
         ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+        ApplyPendingWindowPlacement(wfLuma.description);
         const auto wfLumaVisible = ImGui::Begin(wfLuma.description.data(), &m_showWFLuma, ImGuiWindowFlags_NoCollapse);
         if (wfLumaVisible)
             ImGuiUtilRenderLumaWF(wfLuma, renderSettings.yuvRange, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
@@ -661,6 +907,7 @@ void Application::UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexc
     if (m_showWFRgb) {
         auto& wfRgb = sourceTextures->wfRGB;
         ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+        ApplyPendingWindowPlacement(wfRgb.description);
         const auto wfRgbVisible = ImGui::Begin(wfRgb.description.data(), &m_showWFRgb, ImGuiWindowFlags_NoCollapse);
         if (wfRgbVisible)
             ImGuiUtilRenderRGBWF(wfRgb, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
@@ -670,6 +917,7 @@ void Application::UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexc
     if (m_showWFRgbParade) {
         auto& wfRgbParade = sourceTextures->wfRGBParade;
         ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+        ApplyPendingWindowPlacement(wfRgbParade.description);
         const auto wfRgbParadeVisible = ImGui::Begin(wfRgbParade.description.data(), &m_showWFRgbParade, ImGuiWindowFlags_NoCollapse);
         if (wfRgbParadeVisible)
             ImGuiUtilRenderParade(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
@@ -679,6 +927,7 @@ void Application::UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexc
     if (m_showWFRgbBlacks) {
         auto& wfRgbBlacks = sourceTextures->wfRGBBlacks;
         ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+        ApplyPendingWindowPlacement(wfRgbBlacks.description);
         const auto wfRgbBlacksVisible = ImGui::Begin(wfRgbBlacks.description.data(), &m_showWFRgbBlacks, ImGuiWindowFlags_NoCollapse);
         if (wfRgbBlacksVisible)
             ImGuiUtilRenderBlacklevel(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
@@ -688,6 +937,7 @@ void Application::UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexc
     if (m_showWFYuvParade) {
         auto& wfYuvParade = sourceTextures->wfYUVParade;
         ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+        ApplyPendingWindowPlacement(wfYuvParade.description);
         const auto wfYuvParadeVisible = ImGui::Begin(wfYuvParade.description.data(), &m_showWFYuvParade, ImGuiWindowFlags_NoCollapse);
         if (wfYuvParadeVisible)
             ImGuiUtilRenderParade(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
@@ -701,6 +951,7 @@ void Application::UI_Scopes(const scpp::TargetTextures* sourceTextures) noexcept
     if (m_showSCUV) {
         auto& scUV = sourceTextures->scUV;
         ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
+        ApplyPendingWindowPlacement(scUV.description);
         auto scUVVisible = ImGui::Begin(scUV.description.data(), &m_showSCUV, ImGuiWindowFlags_NoCollapse);
         if (scUVVisible)
             ImGuiUtilRenderUV(scUV, ScaleBehavior::ScaleToFit);
@@ -710,6 +961,7 @@ void Application::UI_Scopes(const scpp::TargetTextures* sourceTextures) noexcept
     if (m_showSCXYZ) {
         auto& scXYZ = sourceTextures->scXYZ;
         ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
+        ApplyPendingWindowPlacement(scXYZ.description);
         auto scXYZVisible = ImGui::Begin(scXYZ.description.data(), &m_showSCXYZ, ImGuiWindowFlags_NoCollapse);
         if (scXYZVisible)
             ImGuiUtilRenderCIE(scXYZ, renderSettings.colorSpace, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
@@ -719,6 +971,7 @@ void Application::UI_Scopes(const scpp::TargetTextures* sourceTextures) noexcept
     if (m_showSCDia) {
         auto& scDia = sourceTextures->scDia;
         ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
+        ApplyPendingWindowPlacement(scDia.description);
         auto scDiaVisible = ImGui::Begin(scDia.description.data(), &m_showSCDia, ImGuiWindowFlags_NoCollapse);
         if (scDiaVisible)
             ImGuiUtilRenderDia(scDia, ScaleBehavior::ScaleToFit);

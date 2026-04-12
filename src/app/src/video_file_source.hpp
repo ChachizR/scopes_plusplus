@@ -20,7 +20,9 @@ private:
     std::mutex            m_frameMutex;
     PendingFrame          m_latestDecodedFrame;
     PendingFrame          m_stagedFrame;
+    uint64_t              m_decodedSequence{0u};
     uint64_t              m_lastRenderedSequence{0u};
+    uint64_t              m_droppedDecodedFrames{0u};
     float                 m_nominalSourceFPS{0.0f};
 
 public:

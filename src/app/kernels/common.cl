@@ -67,6 +67,14 @@ inline int2 coordsVecFromIndex(uint index, uint width) {
     return (int2)(index % width, index / width);
 }
 
+inline bool isAnalysisSample(uint index, uint width, uint analysis_step) {
+    if (analysis_step <= 1u)
+        return true;
+
+    int2 coords = coordsVecFromIndex(index, width);
+    return (coords.x % analysis_step) == 0 && (coords.y % analysis_step) == 0;
+}
+
 inline uint indexFromCoords(uint x, uint y, uint width) {
     return y * width + x;
 }
