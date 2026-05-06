@@ -21,7 +21,8 @@ This project is organized as a standard CMake project and produces a single exec
 - [x] GPU-accelerated image pipeline (OpenGL + OpenCL interop)
 - [x] 32-Bit float based processing pipeline
 - [x] Customizable & dockable user-interface
-- [x] NDI Input support
+- [x] Built-in live test-pattern source
+- [ ] Network input source integration
 
 ## Roadmap
 
@@ -50,6 +51,22 @@ ext/              # External libraries (see below)
 docs/screenshots/ # Documentation images
 ```
 
+## Quickstart (macOS Intel)
+
+```bash
+git clone https://github.com/MindStudioOfficial/scopes_plusplus.git
+cd scopes_plusplus
+cmake -S . -B build-macos
+cmake --build build-macos --parallel
+./build-macos/src/app/scopes++
+```
+
+### Notes for macOS
+
+- The current Apple path targets Intel Macs and builds against the system OpenGL/OpenCL frameworks.
+- On Apple builds, NDI is disabled by default in this repository and the app exposes a built-in animated test-pattern source so the renderer and UI remain usable out of the box.
+- Apple only exposes OpenCL 1.2, so the build lowers the OpenCL C++ binding target accordingly.
+
 ## Quickstart (Windows)
 
 ```powershell
@@ -62,7 +79,7 @@ cmake --build build --parallel --config Release
 
 ### Notes
 
-- The NDI SDK is expected under `ext/ndi`. A post-build step copies `Processing.NDI.Lib.Advanced.x64.dll` to the runtime folder. You need to download the NDI SDK separately from [NDI's website](https://ndi.tv/sdk/) due to licensing restrictions. The expected folder structure is:
+- Windows can still optionally build with NDI enabled. The NDI SDK is expected under `ext/ndi`. A post-build step copies `Processing.NDI.Lib.Advanced.x64.dll` to the runtime folder. You need to download the NDI SDK separately from [NDI's website](https://ndi.tv/sdk/) due to licensing restrictions. The expected folder structure is:
 
 ```
 📂 ext/ndi
@@ -75,6 +92,7 @@ cmake --build build --parallel --config Release
 ```
 
 - OpenCL kernels and `assets/` are copied to the build output via CMake post-build steps/targets.
+- `SCPP_ENABLE_NDI` defaults to `ON` on Windows and `OFF` on Apple platforms.
 
 ## Development patterns & conventions
 
@@ -97,7 +115,7 @@ cmake --build build --target tests --config Debug
 Contributions are welcome. Please open issues for discussion before submitting larger changes. For small fixes, open a pull request with a clear description of the change and how it was tested.
 
 Suggested PR checklist:
-- Build succeeds in Debug and Release on Windows.
+- Build succeeds in Debug and Release on Windows, and in the default macOS configuration on Intel Macs when changing shared runtime code.
 - Any new runtime asset or OpenCL kernel is added to the correct `assets/` or `kernels/` folder and tested.
 - Follow existing code style and minimal, focused commits.
 

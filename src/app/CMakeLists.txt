@@ -5,6 +5,11 @@ file(GLOB_RECURSE APP_HEADERS CONFIGURE_DEPENDS "./src/*.hpp")
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS "./src/*.cpp")
 file(GLOB_RECURSE APP_CL_SOURCES CONFIGURE_DEPENDS "./kernels/*.cl")
 
+if(NOT SCPP_ENABLE_NDI)
+    list(FILTER APP_HEADERS EXCLUDE REGEX ".*/ndi_source(_provider)?\\.hpp$")
+    list(FILTER APP_SOURCES EXCLUDE REGEX ".*/ndi_source(_provider)?\\.cpp$")
+endif()
+
 add_executable(${PROJECT_NAME} ./src/main.cpp ${APP_SOURCES})
 target_sources(${PROJECT_NAME} PRIVATE ${APP_HEADERS})
 target_sources(${PROJECT_NAME} PRIVATE ${APP_CL_SOURCES})
@@ -65,25 +70,30 @@ target_include_directories(${PROJECT_NAME}
     $<TARGET_PROPERTY:glm,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
-# ## NDI
-set(NDI_SDK_DIR "${CMAKE_SOURCE_DIR}/ext/ndi")
+if(SCPP_ENABLE_NDI)
+    set(NDI_SDK_DIR "${CMAKE_SOURCE_DIR}/ext/ndi")
 
-target_include_directories(${PROJECT_NAME}
-    PRIVATE
-    ${NDI_SDK_DIR}/include
-)
+    target_include_directories(${PROJECT_NAME}
+        PRIVATE
+        ${NDI_SDK_DIR}/include
+    )
 
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-    ${NDI_SDK_DIR}/Processing.NDI.Lib.Advanced.x64.lib
-)
+    if(WIN32)
+        target_link_libraries(${PROJECT_NAME}
+            PRIVATE
+            ${NDI_SDK_DIR}/Processing.NDI.Lib.Advanced.x64.lib
+        )
 
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${NDI_SDK_DIR}/Processing.NDI.Lib.Advanced.x64.dll
-    $<TARGET_FILE_DIR:${PROJECT_NAME}>
-    COMMENT "Copying NDI library to build directory"
-)
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${NDI_SDK_DIR}/Processing.NDI.Lib.Advanced.x64.dll
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>
+            COMMENT "Copying NDI library to build directory"
+        )
+    else()
+        message(FATAL_ERROR "SCPP_ENABLE_NDI is only wired for Windows in this repository.")
+    endif()
+endif()
 
 # ## Assets
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
@@ -129,7 +139,27 @@ endif()
 
 target_compile_definitions(
     ${PROJECT_NAME} PUBLIC
-    CL_HPP_TARGET_OPENCL_VERSION=300
+    CL_HPP_MINIMUM_OPENCL_VERSION=120
 )
+
+if(APPLE)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC
+        CL_TARGET_OPENCL_VERSION=120
+        CL_HPP_TARGET_OPENCL_VERSION=120
+    )
+else()
+    target_compile_definitions(${PROJECT_NAME} PUBLIC
+        CL_TARGET_OPENCL_VERSION=300
+        CL_HPP_TARGET_OPENCL_VERSION=300
+    )
+endif()
+
+if(SCPP_ENABLE_NDI)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC SCPP_ENABLE_NDI=1)
+endif()
+
+if(APPLE)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE GL_SILENCE_DEPRECATION)
+endif()
 
 add_subdirectory(./test) # Add test source

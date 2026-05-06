@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "runtime_paths.hpp"
 
 namespace scpp {
 
@@ -23,7 +24,7 @@ Application::Application() {
         throw std::runtime_error("OpenCL device provider initialization failed");
     }
 
-    m_ndiSourceProvider = std::make_unique<NDISourceProvider>(*m_openclDeviceProvider);
+    m_sourceProvider = std::make_unique<SourceProvider>();
 }
 
 Application::~Application() {
@@ -40,8 +41,13 @@ auto Application::InitGLFW() -> bool {
     }
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#if defined(__APPLE__)
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#else
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+#endif
 
     m_mainScale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
 
@@ -207,7 +213,8 @@ void Application::SetImGuiStyle() {
 auto Application::LoadFonts() -> bool {
     ImGuiIO& io = ImGui::GetIO();
 
-    m_fontRoboto = io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-VariableFont_wdth,wght.ttf");
+    const auto fontPath = ResolveRuntimePath("assets/fonts/Roboto-VariableFont_wdth,wght.ttf");
+    m_fontRoboto        = io.Fonts->AddFontFromFileTTF(fontPath.string().c_str());
 
     if (!m_fontRoboto)
         return false;
@@ -234,6 +241,11 @@ void Application::Run() {
         if (glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) != 0) {
             ImGui_ImplGlfw_Sleep(10);
             continue;
+        }
+
+        if (m_source) {
+            SyncRenderFeaturesFromUI();
+            m_source->UpdateOnMainThread();
         }
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -276,7 +288,7 @@ void Application::UI_Main() noexcept {
         ImGuiDockNodeFlags_PassthruCentralNode);
 
     // UI_Settings();
-    UI_NDISources();
+    UI_Sources();
 
     if (m_source) {
         UI_ActiveSource();
@@ -285,7 +297,7 @@ void Application::UI_Main() noexcept {
     }
 }
 
-void Application::UI_MainMenuBar() const noexcept {
+void Application::UI_MainMenuBar() noexcept {
     ImGui::BeginMainMenuBar();
 
     // File menu
@@ -296,7 +308,42 @@ void Application::UI_MainMenuBar() const noexcept {
         ImGui::EndMenu();
     }
 
+    if (ImGui::BeginMenu("View")) {
+        ImGui::MenuItem("Source Preview", nullptr, &m_showSourcePreview);
+        ImGui::MenuItem("False Color", nullptr, &m_showFalseColor);
+        ImGui::Separator();
+        ImGui::MenuItem("Luminance Waveform", nullptr, &m_showWFLuma);
+        ImGui::MenuItem("RGB Waveform", nullptr, &m_showWFRgb);
+        ImGui::MenuItem("RGB Parade", nullptr, &m_showWFRgbParade);
+        ImGui::MenuItem("RGB Blacklevel", nullptr, &m_showWFRgbBlacks);
+        ImGui::MenuItem("YUV Parade", nullptr, &m_showWFYuvParade);
+        ImGui::Separator();
+        ImGui::MenuItem("UV Vectorscope", nullptr, &m_showSCUV);
+        ImGui::MenuItem("CIE 1931 Chromaticity", nullptr, &m_showSCXYZ);
+        ImGui::MenuItem("Double Diamond", nullptr, &m_showSCDia);
+        ImGui::EndMenu();
+    }
+
     ImGui::EndMainMenuBar();
+}
+
+void Application::SyncRenderFeaturesFromUI() noexcept {
+    if (!m_source) {
+        return;
+    }
+
+    auto& renderSettings = m_source->GetRenderSettings();
+    renderSettings.enabledFeatures = RenderFeature::None;
+
+    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::FalseColor, m_showFalseColor);
+    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFLuma, m_showWFLuma);
+    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFRgb, m_showWFRgb);
+    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFRgbParade, m_showWFRgbParade);
+    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFRgbBlacks, m_showWFRgbBlacks);
+    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFYuvParade, m_showWFYuvParade);
+    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::SCUV, m_showSCUV);
+    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::SCXYZ, m_showSCXYZ);
+    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::SCDia, m_showSCDia);
 }
 
 void Application::UI_Settings() const noexcept {
@@ -305,14 +352,15 @@ void Application::UI_Settings() const noexcept {
     ImGui::End();
 }
 
-void Application::UI_NDISources() noexcept {
-    const auto sources = m_ndiSourceProvider->GetSources();
+void Application::UI_Sources() noexcept {
+    const auto sources = m_sourceProvider->GetSources();
 
-    ImGui::Begin("NDI Sources");
-    if (ImGui::BeginTable("NDI Sources Table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+    ImGui::Begin("Sources");
+
+    if (ImGui::BeginTable("Sources Table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("Select", ImGuiTableColumnFlags_::ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableSetupColumn("Name");
-        ImGui::TableSetupColumn("URL");
+        ImGui::TableSetupColumn("Details");
         ImGui::TableHeadersRow();
         for (const auto& source : sources) {
             ImGui::TableNextRow();
@@ -321,18 +369,20 @@ void Application::UI_NDISources() noexcept {
                 if (m_source) {
                     m_source->Stop();
                 }
-                m_source = std::make_unique<NDISource>(
-                    *m_openclDeviceProvider,
-                    source.AsNDIlibSource());
+                m_source = m_sourceProvider->CreateSource(*m_openclDeviceProvider, source);
+                if (!m_source) {
+                    std::println("Failed to create source: {}", source.name);
+                    continue;
+                }
                 if (m_source->Start() != ErrorCode::None) {
-                    std::println("Failed to start NDI source: {}", m_source->GetName());
+                    std::println("Failed to start source: {}", m_source->GetName());
                     m_source.reset();
                 }
             }
             ImGui::TableSetColumnIndex(1);
             ImGui::TextUnformatted(source.name.c_str());
             ImGui::TableSetColumnIndex(2);
-            ImGui::TextUnformatted(source.urlAddress.c_str());
+            ImGui::TextUnformatted(source.details.c_str());
         }
         ImGui::EndTable();
     }
@@ -346,7 +396,8 @@ void Application::UI_SourceStats() noexcept {
     ImGui::Text("Name: %s", m_source->GetName().data());
     ImGui::Text("Dimensions: %ux%u", sourceStats.sourceDims.width, sourceStats.sourceDims.height);
     ImGui::Text("FPS: %.2f", sourceStats.sourceFPS);
-    ImGui::Text(std::format("Format: {}", sourceStats.sourceFormat).c_str());
+    const auto formatLabel = std::format("Format: {}", sourceStats.sourceFormat);
+    ImGui::Text("%s", formatLabel.c_str());
     ImGui::Text("Max Render FPS: %.2f", sourceStats.maxRenderFPS);
     ImGui::Text("Render Duration: %.4f ms", sourceStats.renderDurationMS);
     ImGui::Text("Avg Max Render FPS: %.2f", sourceStats.avgMaxRenderFPS);
@@ -405,6 +456,10 @@ void Application::UI_RenderSettings() noexcept {
 }
 
 void Application::UI_SourcePreview(const scpp::TargetTextures* sourceTextures) noexcept {
+    if (!m_showSourcePreview) {
+        return;
+    }
+
     const auto& sourceStats = m_source->GetStats();
 
     const auto sourceAspect = WindowAspectData{
@@ -415,12 +470,19 @@ void Application::UI_SourcePreview(const scpp::TargetTextures* sourceTextures) n
     auto& sourcePreview = sourceTextures->sourcePreview;
 
     ImGui::SetNextWindowSizeConstraints(ImVec2(160, 32 + 90), c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&sourceAspect);
-    ImGui::Begin(sourcePreview.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    if (!ImGui::Begin(sourcePreview.description.data(), &m_showSourcePreview, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
     ImGuiUtilImageRender(sourcePreview, ScaleBehavior::ScaleToFit);
     ImGui::End();
 }
 
 void Application::UI_FalseColor(const scpp::TargetTextures* sourceTextures) noexcept {
+    if (!m_showFalseColor) {
+        return;
+    }
+
     // --- Constants for layout ---
     constexpr float kScaleTotalWidth = 95.0f; // total width for the scale column (labels + ticks + color band)
     constexpr float kBandWidth       = 40.0f; // width of the colored bar itself (right-aligned inside the scale column)
@@ -449,7 +511,7 @@ void Application::UI_FalseColor(const scpp::TargetTextures* sourceTextures) noex
 
     ImGui::SetNextWindowSizeConstraints(ImVec2(160 + kScaleTotalWidth, 32 + 90), c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&sourceAspect);
 
-    auto falseColorVisible = ImGui::Begin(falseColorTex.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+    auto falseColorVisible = ImGui::Begin(falseColorTex.description.data(), &m_showFalseColor, ImGuiWindowFlags_NoCollapse);
 
     if (falseColorVisible) {
 
@@ -560,55 +622,54 @@ void Application::UI_FalseColor(const scpp::TargetTextures* sourceTextures) noex
         ImGui::EndChild(); // scale
     }
     ImGui::End(); // window
-    SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::FalseColor, falseColorVisible);
+    (void)falseColorVisible;
 }
 
 void Application::UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexcept {
     auto& renderSettings = m_source->GetRenderSettings();
 
-    { /// Luma Waveform
+    if (m_showWFLuma) {
         auto& wfLuma = sourceTextures->wfLuma;
         ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
-        const auto wfLumaVisible = ImGui::Begin(wfLuma.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        const auto wfLumaVisible = ImGui::Begin(wfLuma.description.data(), &m_showWFLuma, ImGuiWindowFlags_NoCollapse);
         if (wfLumaVisible)
             ImGuiUtilRenderLumaWF(wfLuma, renderSettings.yuvRange, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFLuma, wfLumaVisible);
         ImGui::End();
     }
-    { /// RGB Waveform
+
+    if (m_showWFRgb) {
         auto& wfRgb = sourceTextures->wfRGB;
         ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
-        const auto wfRgbVisible = ImGui::Begin(wfRgb.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        const auto wfRgbVisible = ImGui::Begin(wfRgb.description.data(), &m_showWFRgb, ImGuiWindowFlags_NoCollapse);
         if (wfRgbVisible)
             ImGuiUtilRenderRGBWF(wfRgb, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFRgb, wfRgbVisible);
         ImGui::End();
     }
-    { /// RGB Parade
+
+    if (m_showWFRgbParade) {
         auto& wfRgbParade = sourceTextures->wfRGBParade;
         ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
-        const auto wfRgbParadeVisible = ImGui::Begin(wfRgbParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        const auto wfRgbParadeVisible = ImGui::Begin(wfRgbParade.description.data(), &m_showWFRgbParade, ImGuiWindowFlags_NoCollapse);
         if (wfRgbParadeVisible)
             ImGuiUtilRenderParade(wfRgbParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFRgbParade, wfRgbParadeVisible);
         ImGui::End();
     }
-    { /// RGB Blacks
+
+    if (m_showWFRgbBlacks) {
         auto& wfRgbBlacks = sourceTextures->wfRGBBlacks;
         ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
-        const auto wfRgbBlacksVisible = ImGui::Begin(wfRgbBlacks.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        const auto wfRgbBlacksVisible = ImGui::Begin(wfRgbBlacks.description.data(), &m_showWFRgbBlacks, ImGuiWindowFlags_NoCollapse);
         if (wfRgbBlacksVisible)
             ImGuiUtilRenderBlacklevel(wfRgbBlacks, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFRgbBlacks, wfRgbBlacksVisible);
         ImGui::End();
     }
-    { /// YUV Parade
+
+    if (m_showWFYuvParade) {
         auto& wfYuvParade = sourceTextures->wfYUVParade;
         ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
-        const auto wfYuvParadeVisible = ImGui::Begin(wfYuvParade.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        const auto wfYuvParadeVisible = ImGui::Begin(wfYuvParade.description.data(), &m_showWFYuvParade, ImGuiWindowFlags_NoCollapse);
         if (wfYuvParadeVisible)
             ImGuiUtilRenderParade(wfYuvParade, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::WFYuvParade, wfYuvParadeVisible);
         ImGui::End();
     }
 }
@@ -616,31 +677,30 @@ void Application::UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexc
 void Application::UI_Scopes(const scpp::TargetTextures* sourceTextures) noexcept {
     auto& renderSettings = m_source->GetRenderSettings();
 
-    { /// UV Scope
+    if (m_showSCUV) {
         auto& scUV = sourceTextures->scUV;
         ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
-        auto scUVVisible = ImGui::Begin(scUV.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        auto scUVVisible = ImGui::Begin(scUV.description.data(), &m_showSCUV, ImGuiWindowFlags_NoCollapse);
         if (scUVVisible)
             ImGuiUtilRenderUV(scUV, ScaleBehavior::ScaleToFit);
-        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::SCUV, scUVVisible);
         ImGui::End();
     }
-    { /// XYZ Scope
+
+    if (m_showSCXYZ) {
         auto& scXYZ = sourceTextures->scXYZ;
         ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
-        auto scXYZVisible = ImGui::Begin(scXYZ.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        auto scXYZVisible = ImGui::Begin(scXYZ.description.data(), &m_showSCXYZ, ImGuiWindowFlags_NoCollapse);
         if (scXYZVisible)
             ImGuiUtilRenderCIE(scXYZ, renderSettings.colorSpace, ScaleBehavior::ScaleToFit, FlipBehavior::FlipVertically);
-        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::SCXYZ, scXYZVisible);
         ImGui::End();
     }
-    { /// Dia Scope
+
+    if (m_showSCDia) {
         auto& scDia = sourceTextures->scDia;
         ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
-        auto scDiaVisible = ImGui::Begin(scDia.description.data(), nullptr, ImGuiWindowFlags_NoCollapse);
+        auto scDiaVisible = ImGui::Begin(scDia.description.data(), &m_showSCDia, ImGuiWindowFlags_NoCollapse);
         if (scDiaVisible)
             ImGuiUtilRenderDia(scDia, ScaleBehavior::ScaleToFit);
-        SetRenderFeatureFlag(renderSettings.enabledFeatures, RenderFeature::SCDia, scDiaVisible);
         ImGui::End();
     }
 }

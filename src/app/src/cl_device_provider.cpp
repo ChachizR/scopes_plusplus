@@ -1,4 +1,5 @@
 #include "cl_device_provider.hpp"
+#include "runtime_paths.hpp"
 
 #define CHECK_KERNEL_ERROR(res, name)                                     \
     if (res != CL_SUCCESS) {                                              \
@@ -7,6 +8,62 @@
     }
 
 namespace scpp {
+
+namespace {
+
+auto LoadProgramSourceRecursive(
+    const std::filesystem::path& path,
+    std::vector<std::filesystem::path>& includeStack) -> std::expected<std::string, ErrorCode> {
+    const auto resolvedPath = ResolveRuntimePath(path);
+
+    if (!std::filesystem::exists(resolvedPath)) {
+        std::println("OpenCL kernel source file not found: {}", resolvedPath.string());
+        return std::unexpected(ErrorCode::KernelSourceNotFound);
+    }
+
+    if (std::ranges::find(includeStack, resolvedPath) != includeStack.end()) {
+        std::println("Detected recursive OpenCL include: {}", resolvedPath.string());
+        return std::unexpected(ErrorCode::KernelProgramBuildFailed);
+    }
+
+    std::ifstream kernelFile(resolvedPath);
+    if (!kernelFile.is_open()) {
+        std::println("Failed to open OpenCL kernel source file: {}", resolvedPath.string());
+        return std::unexpected(ErrorCode::FSNotFound);
+    }
+
+    includeStack.push_back(resolvedPath);
+
+    std::string source;
+    std::string line;
+
+    while (std::getline(kernelFile, line)) {
+        constexpr auto includePrefix = "#include \""sv;
+
+        if (line.starts_with(includePrefix) && line.ends_with('"')) {
+            const auto includeName = line.substr(includePrefix.size(), line.size() - includePrefix.size() - 1u);
+            const auto includePath = resolvedPath.parent_path() / includeName;
+
+            auto includedSource = LoadProgramSourceRecursive(includePath, includeStack);
+            if (!includedSource) {
+                includeStack.pop_back();
+                return std::unexpected(includedSource.error());
+            }
+
+            source += *includedSource;
+            source += '\n';
+            continue;
+        }
+
+        source += line;
+        source += '\n';
+    }
+
+    includeStack.pop_back();
+    return source;
+}
+
+} // namespace
 
 OpenCLDeviceProvider::OpenCLDeviceProvider() {
     const auto deviceOpt = SelectDevice();
@@ -190,19 +247,13 @@ auto OpenCLDeviceProvider::CreateContext() -> std::optional<cl::Context> {
 }
 
 auto OpenCLDeviceProvider::LoadProgramFromFile(const std::filesystem::path& path) const -> std::expected<cl::Program, ErrorCode> {
-    if (!std::filesystem::exists(path)) {
-        std::println("OpenCL kernel source file not found: {}", path.string());
-        return std::unexpected(ErrorCode::KernelSourceNotFound);
-    }
-    std::ifstream kernelFile(path);
-    if (!kernelFile.is_open()) {
-        std::println("Failed to open OpenCL kernel source file: {}", path.string());
-        return std::unexpected(ErrorCode::FSNotFound);
+    std::vector<std::filesystem::path> includeStack;
+    auto kernelSourceEx = LoadProgramSourceRecursive(path, includeStack);
+    if (!kernelSourceEx) {
+        return std::unexpected(kernelSourceEx.error());
     }
 
-    std::string kernelSource((std::istreambuf_iterator<char>(kernelFile)),
-                             std::istreambuf_iterator<char>());
-    kernelFile.close();
+    const auto& kernelSource = *kernelSourceEx;
     cl_int res = CL_SUCCESS;
 
     cl::Program program(m_context, kernelSource, false, &res);
@@ -211,7 +262,7 @@ auto OpenCLDeviceProvider::LoadProgramFromFile(const std::filesystem::path& path
         return std::unexpected(ErrorCode::KernelCreateProgramFailed);
     }
 
-    res = program.build({m_device}, "-Ikernels");
+    res = program.build({m_device});
     if (res != CL_SUCCESS) {
         std::println("Failed to build OpenCL program: {}", res);
         cl_build_status status = program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(m_device, &res);

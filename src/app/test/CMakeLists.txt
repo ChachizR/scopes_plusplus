@@ -25,8 +25,20 @@ target_include_directories(
 
 target_compile_definitions(
     tests PUBLIC
-    CL_HPP_TARGET_OPENCL_VERSION=300
+    CL_HPP_MINIMUM_OPENCL_VERSION=120
 )
+
+if(APPLE)
+    target_compile_definitions(tests PUBLIC
+        CL_TARGET_OPENCL_VERSION=120
+        CL_HPP_TARGET_OPENCL_VERSION=120
+    )
+else()
+    target_compile_definitions(tests PUBLIC
+        CL_TARGET_OPENCL_VERSION=300
+        CL_HPP_TARGET_OPENCL_VERSION=300
+    )
+endif()
 
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 
