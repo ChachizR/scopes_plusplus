@@ -5,6 +5,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/dict.h>
 #include <libavutil/error.h>
 #include <libavutil/frame.h>
 #include <libavutil/imgutils.h>
@@ -42,26 +43,102 @@ auto FFmpegErrorString(int errnum) -> std::string {
     return std::string{buffer.data()};
 }
 
+[[nodiscard]]
+auto URLScheme(std::string_view input) noexcept -> std::string_view {
+    const auto schemeEnd = input.find("://"sv);
+    if (schemeEnd == std::string_view::npos || schemeEnd == 0u) {
+        return {};
+    }
+
+    const auto scheme = input.substr(0u, schemeEnd);
+    const bool validScheme = std::ranges::all_of(scheme, [](char ch) {
+        return std::isalnum(static_cast<unsigned char>(ch)) || ch == '+' || ch == '-' || ch == '.';
+    });
+    return validScheme ? scheme : std::string_view{};
+}
+
+[[nodiscard]]
+auto IsStreamURL(std::string_view input) noexcept -> bool {
+    return !URLScheme(input).empty();
+}
+
+[[nodiscard]]
+auto IsSRTURL(std::string_view input) noexcept -> bool {
+    return URLScheme(input) == "srt"sv;
+}
+
+[[nodiscard]]
+auto IsPlaylistPath(const std::filesystem::path& path) -> bool {
+    const auto extension = path.extension().string();
+    return extension == ".m3u8" || extension == ".m3u";
+}
+
+[[nodiscard]]
+auto SourceDisplayName(const std::filesystem::path& path) -> std::string {
+    const auto text = path.string();
+    if (IsSRTURL(text)) {
+        return text;
+    }
+
+    return path.filename().empty() ? text : path.filename().string();
+}
+
+void InitFFmpegNetwork() {
+    static const int initialized = []() {
+        avformat_network_init();
+        return 1;
+    }();
+    (void)initialized;
+}
+
 } // namespace
 
 VideoFileSource::VideoFileSource(const OpenCLDeviceProvider& deviceProviderRef, std::filesystem::path path) noexcept
     : VideoSource{deviceProviderRef}
     , m_path{std::move(path)}
-    , m_name{m_path.filename().empty() ? m_path.string() : m_path.filename().string()} {}
+    , m_name{SourceDisplayName(m_path)} {}
+
+VideoFileSource::VideoFileSource(std::filesystem::path path) noexcept
+    : VideoSource{}
+    , m_path{std::move(path)}
+    , m_name{SourceDisplayName(m_path)} {}
 
 auto VideoFileSource::Start() -> ErrorCode {
     if (m_isRunning) {
         return ErrorCode::SourceAlreadyRunning;
     }
-
-    const auto resolvedPath = ResolveRuntimePath(m_path);
-    if (!std::filesystem::exists(resolvedPath)) {
-        std::println("Video file not found: {}", resolvedPath.string());
-        return ErrorCode::FSNotFound;
+    if (m_thread.joinable()) {
+        m_thread.join();
     }
 
-    m_path       = resolvedPath;
-    m_name       = m_path.filename().empty() ? m_path.string() : m_path.filename().string();
+    InitFFmpegNetwork();
+
+    const bool urlInput = IsStreamURL(m_path.string());
+    if (urlInput && !IsSRTURL(m_path.string())) {
+        std::println("Unsupported stream URL '{}'. Only SRT URLs are currently supported.", m_path.string());
+        return ErrorCode::SourceNotFound;
+    }
+
+    if (!urlInput && IsPlaylistPath(m_path)) {
+        std::println("Unsupported playlist source '{}'. HLS/playlist playback is disabled.", m_path.string());
+        return ErrorCode::SourceNotFound;
+    }
+
+    if (!urlInput) {
+        const auto resolvedPath = ResolveRuntimePath(m_path);
+        if (!std::filesystem::exists(resolvedPath)) {
+            std::println("Video file not found: {}", resolvedPath.string());
+            return ErrorCode::FSNotFound;
+        }
+
+        m_path = resolvedPath;
+    }
+
+    m_name                 = SourceDisplayName(m_path);
+    m_decodedSequence      = 0u;
+    m_lastRenderedSequence = 0u;
+    m_latestDecodedFrame   = {};
+    m_stagedFrame          = {};
     m_isRunning  = true;
     m_shouldStop = false;
     m_thread     = std::thread([this]() { DecodeLoop(); });
@@ -90,12 +167,14 @@ void VideoFileSource::UpdateOnMainThread() noexcept {
 
     const auto renderStart = Clock::now();
 
-    m_renderer.ExecutePipeline(
-        m_stagedFrame.data.data(),
-        m_stagedFrame.dims,
-        SourceFormat::BGRA_8888,
-        m_stagedFrame.lineStrideBytes,
-        m_renderSettings);
+    if (m_renderer) {
+        m_renderer->ExecutePipeline(
+            m_stagedFrame.data.data(),
+            m_stagedFrame.dims,
+            SourceFormat::BGRA_8888,
+            m_stagedFrame.lineStrideBytes,
+            m_renderSettings);
+    }
 
     const auto renderEnd = Clock::now();
 
@@ -107,14 +186,36 @@ void VideoFileSource::UpdateOnMainThread() noexcept {
     m_lastRenderedSequence = m_stagedFrame.sequence;
 }
 
+auto VideoFileSource::GetSourcePreviewFrame() const noexcept -> std::optional<SourceFrameView> {
+    if (!m_stagedFrame.ready || m_stagedFrame.data.empty()) {
+        return std::nullopt;
+    }
+
+    return SourceFrameView{
+        .data            = m_stagedFrame.data,
+        .dims            = m_stagedFrame.dims,
+        .format          = SourceFormat::BGRA_8888,
+        .lineStrideBytes = m_stagedFrame.lineStrideBytes,
+        .sequence        = m_stagedFrame.sequence,
+    };
+}
+
 void VideoFileSource::DecodeLoop() {
     AVFormatContext* formatContext = nullptr;
+    AVDictionary*    openOptions   = nullptr;
 
-    if (const auto openResult = avformat_open_input(&formatContext, m_path.string().c_str(), nullptr, nullptr); openResult < 0) {
-        std::println("Failed to open video file '{}': {}", m_path.string(), FFmpegErrorString(openResult));
+    const bool streamURL = IsStreamURL(m_path.string());
+    if (streamURL) {
+        av_dict_set(&openOptions, "rw_timeout", "5000000", 0);
+    }
+
+    if (const auto openResult = avformat_open_input(&formatContext, m_path.string().c_str(), nullptr, streamURL ? &openOptions : nullptr); openResult < 0) {
+        av_dict_free(&openOptions);
+        std::println("Failed to open source '{}': {}", m_path.string(), FFmpegErrorString(openResult));
         m_isRunning = false;
         return;
     }
+    av_dict_free(&openOptions);
 
     auto formatContextDeleter = [](AVFormatContext* context) {
         if (context != nullptr) {
@@ -137,6 +238,8 @@ void VideoFileSource::DecodeLoop() {
     }
 
     AVStream* const videoStream = formatContext->streams[videoStreamIndex];
+    const bool canLoop = !streamURL && (formatContext->pb == nullptr || (formatContext->pb->seekable & AVIO_SEEKABLE_NORMAL));
+    const bool shouldPaceDecode = canLoop;
     const AVCodec*   codec      = avcodec_find_decoder(videoStream->codecpar->codec_id);
     if (codec == nullptr) {
         std::println("No decoder found for '{}'", m_path.string());
@@ -181,7 +284,16 @@ void VideoFileSource::DecodeLoop() {
     if (frameRate <= 0.0) {
         frameRate = 30.0;
     }
-    m_nominalSourceFPS = static_cast<float>(frameRate);
+    {
+        std::scoped_lock lock(m_frameMutex);
+        m_nominalSourceFPS = static_cast<float>(frameRate);
+    }
+    std::println(
+        "Opened source '{}': {}x{} {:.3f} fps",
+        m_path.string(),
+        srcDims.width,
+        srcDims.height,
+        frameRate);
 
     SwsContext* swsContext = sws_getContext(
         codecContext->width,
@@ -244,12 +356,19 @@ void VideoFileSource::DecodeLoop() {
                 m_latestDecodedFrame.dims            = srcDims;
                 m_latestDecodedFrame.lineStrideBytes = static_cast<uint32_t>(dstLinesize[0]);
                 m_latestDecodedFrame.ready           = true;
-                m_latestDecodedFrame.sequence += 1u;
+                m_latestDecodedFrame.sequence        = ++m_decodedSequence;
                 m_latestDecodedFrame.data = convertedFrame;
             }
 
-            nextFrameTime += std::chrono::duration_cast<Clock::duration>(frameDuration);
-            std::this_thread::sleep_until(nextFrameTime);
+            if (shouldPaceDecode) {
+                nextFrameTime += std::chrono::duration_cast<Clock::duration>(frameDuration);
+                const auto now = Clock::now();
+                if (nextFrameTime > now) {
+                    std::this_thread::sleep_until(nextFrameTime);
+                } else {
+                    nextFrameTime = now;
+                }
+            }
         }
 
         return true;
@@ -261,6 +380,10 @@ void VideoFileSource::DecodeLoop() {
         if (readResult == AVERROR_EOF) {
             avcodec_send_packet(codecContext, nullptr);
             if (!processDecodedFrames()) {
+                break;
+            }
+
+            if (!canLoop) {
                 break;
             }
 

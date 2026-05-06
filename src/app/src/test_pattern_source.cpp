@@ -17,6 +17,9 @@ auto TestPatternSource::Start() -> ErrorCode {
     if (m_isRunning) {
         return ErrorCode::SourceAlreadyRunning;
     }
+    if (m_thread.joinable()) {
+        m_thread.join();
+    }
 
     m_isRunning  = true;
     m_shouldStop = false;
@@ -38,7 +41,7 @@ void TestPatternSource::RenderLoop() {
 
         const auto renderStart = Clock::now();
 
-        m_renderer.ExecutePipeline(
+        m_renderer->ExecutePipeline(
             m_frameBuffer.data(),
             c_sourceDims,
             SourceFormat::RGBA_8888,

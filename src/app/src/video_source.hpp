@@ -28,26 +28,35 @@ struct VideoSourceStats {
     }
 };
 
+struct SourceFrameView {
+    std::span<const uint8_t> data;
+    Dims2D                   dims{0u, 0u};
+    SourceFormat             format{SourceFormat::unknown};
+    uint32_t                 lineStrideBytes{0u};
+    uint64_t                 sequence{0u};
+};
+
 class VideoSource {
 protected:
     bool m_isRunning  = false;
     bool m_shouldStop = false;
 
     std::thread      m_thread;
-    OpenCLRenderer   m_renderer;
+    std::unique_ptr<OpenCLRenderer> m_renderer;
     VideoSourceStats m_stats;
     RenderSettings   m_renderSettings;
 
     VideoSource(const OpenCLDeviceProvider& deviceProviderRef)
-        : m_renderer{deviceProviderRef} {}
+        : m_renderer{std::make_unique<OpenCLRenderer>(deviceProviderRef)} {}
+
+    VideoSource() = default;
 
     VideoSource(VideoSource&&)            = delete;
     VideoSource& operator=(VideoSource&&) = delete;
 
 public:
     virtual ~VideoSource() {
-        if (m_isRunning)
-            Stop();
+        Stop();
     }
 
     [[nodiscard]]
@@ -61,10 +70,12 @@ public:
 
     virtual void UpdateOnMainThread() noexcept {}
 
+    [[nodiscard]]
+    virtual auto GetSourcePreviewFrame() const noexcept -> std::optional<SourceFrameView> {
+        return std::nullopt;
+    }
+
     void Stop() {
-        if (!m_isRunning) {
-            return;
-        }
         m_shouldStop = true;
         if (m_thread.joinable()) {
             m_thread.join();
@@ -73,7 +84,10 @@ public:
     }
 
     [[nodiscard]]
-    auto GetRenderer() noexcept -> OpenCLRenderer& { return m_renderer; }
+    auto HasOpenCLRenderer() const noexcept -> bool { return m_renderer != nullptr; }
+
+    [[nodiscard]]
+    auto GetRenderer() noexcept -> OpenCLRenderer& { return *m_renderer; }
 
     [[nodiscard]]
     auto GetStats() const noexcept -> const VideoSourceStats& { return m_stats; }

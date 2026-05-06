@@ -25,4 +25,9 @@ auto SourceProvider::CreateVideoFileSource(const OpenCLDeviceProvider& devicePro
     return std::make_unique<VideoFileSource>(deviceProviderRef, path);
 }
 
+auto SourceProvider::CreateVideoFileSource(const std::filesystem::path& path) const
+    -> std::unique_ptr<VideoSource> {
+    return std::make_unique<VideoFileSource>(path);
+}
+
 } // namespace scpp

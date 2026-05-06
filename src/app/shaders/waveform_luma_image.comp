@@ -1,0 +1,29 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) readonly buffer LumaHistogram {
+    uint bins[];
+} histogram;
+layout(set = 0, binding = 1, rgba8) uniform writeonly image2D waveformImage;
+
+layout(push_constant) uniform PushConstants {
+    uint sourceWidth;
+    uint sourceHeight;
+    float brightness;
+} pc;
+
+const uint WF_WIDTH = 580;
+const uint WF_HEIGHT = 256;
+
+void main() {
+    const uvec2 xy = gl_GlobalInvocationID.xy;
+    if (xy.x >= WF_WIDTH || xy.y >= WF_HEIGHT) {
+        return;
+    }
+
+    const uint lumaBin = WF_HEIGHT - 1u - xy.y;
+    const uint count = histogram.bins[lumaBin * WF_WIDTH + xy.x];
+    const float intensity = clamp(float(count) * pc.brightness / 255.0, 0.0, 1.0);
+    imageStore(waveformImage, ivec2(xy), vec4(0.0, intensity, 0.0, 1.0));
+}

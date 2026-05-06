@@ -20,15 +20,20 @@ private:
     std::mutex            m_frameMutex;
     PendingFrame          m_latestDecodedFrame;
     PendingFrame          m_stagedFrame;
+    uint64_t              m_decodedSequence{0u};
     uint64_t              m_lastRenderedSequence{0u};
     float                 m_nominalSourceFPS{0.0f};
 
 public:
     VideoFileSource(const OpenCLDeviceProvider& deviceProviderRef, std::filesystem::path path) noexcept;
+    explicit VideoFileSource(std::filesystem::path path) noexcept;
 
     auto Start() -> ErrorCode override;
 
     void UpdateOnMainThread() noexcept override;
+
+    [[nodiscard]]
+    auto GetSourcePreviewFrame() const noexcept -> std::optional<SourceFrameView> override;
 
     [[nodiscard]]
     auto GetName() const noexcept -> std::string_view override {

@@ -72,7 +72,7 @@ auto NDISource::HandleVideoFrame(const NDIlib_video_frame_v2_t& videoFrame) noex
 
     const auto startTime = std::chrono::steady_clock::now();
 
-    m_renderer.ExecutePipeline(
+    m_renderer->ExecutePipeline(
         videoFrame.p_data,
         Dims2D{(uint32_t)videoFrame.xres, (uint32_t)videoFrame.yres},
         sourceFormat,

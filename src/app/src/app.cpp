@@ -3,19 +3,59 @@
 
 namespace scpp {
 
-Application::Application() {
+namespace {
+
+constexpr auto c_layoutIniMarker = "[ImGuiIni]\n"sv;
+
+[[nodiscard]]
+auto ParseBoolSetting(std::string_view line, std::string_view key, bool& value) noexcept -> bool {
+    if (!line.starts_with(key) || line.size() <= key.size() || line[key.size()] != '=') {
+        return false;
+    }
+
+    const auto boolText = line.substr(key.size() + 1u);
+    value = boolText == "1"sv || boolText == "true"sv || boolText == "True"sv;
+    return true;
+}
+
+} // namespace
+
+Application::Application(std::optional<std::filesystem::path> initialVideoFile) {
+#if SCPP_USE_VULKAN_UI
+    std::println("Starting Scopes++ with Vulkan UI preview backend");
+#else
+    std::println("Starting Scopes++ with legacy OpenGL/OpenCL backend");
+#endif
+
     if (!InitGLFW()) {
         std::println("Failed to initialize GLFW");
         throw std::runtime_error("GLFW initialization failed");
     }
+
+#if SCPP_USE_VULKAN_UI
+    m_vulkanRenderer = std::make_unique<VulkanRenderer>(m_window);
+    if (!m_vulkanRenderer->IsInitialized()) {
+        const auto error = std::format("Vulkan renderer initialization failed: {}", m_vulkanRenderer->GetLastError());
+        std::println("{}", error);
+        ShutdownGLFW();
+        throw std::runtime_error(error);
+    }
+#endif
+
     if (!InitImGui()) {
         std::println("Failed to initialize ImGui");
-        glfwDestroyWindow(m_window);
-        glfwTerminate();
+        m_vulkanRenderer.reset();
+        ShutdownGLFW();
         throw std::runtime_error("ImGui initialization failed");
     }
 
     SetImGuiStyle();
+
+#if !SCPP_USE_VULKAN_UI
+    m_vulkanRenderer = std::make_unique<VulkanRenderer>();
+    if (!m_vulkanRenderer->IsInitialized()) {
+        std::println("Vulkan renderer skeleton unavailable: {}", m_vulkanRenderer->GetLastError());
+    }
 
     m_openclDeviceProvider = std::make_unique<OpenCLDeviceProvider>();
 
@@ -23,12 +63,25 @@ Application::Application() {
         std::println("Failed to initialize OpenCL device provider");
         throw std::runtime_error("OpenCL device provider initialization failed");
     }
+#else
+    std::println("OpenCL/OpenGL scopes are disabled while SCPP_USE_VULKAN_UI is enabled");
+#endif
 
     m_sourceProvider = std::make_unique<SourceProvider>();
+
+    if (initialVideoFile) {
+        const auto pathText = initialVideoFile->string();
+        const auto copySize = (std::min)(pathText.size(), m_videoFilePath.size() - 1u);
+        std::copy_n(pathText.data(), copySize, m_videoFilePath.data());
+        m_videoFilePath[copySize] = '\0';
+
+        StartVideoFileSource(*initialVideoFile);
+    }
 }
 
 Application::~Application() {
     ShutdownImGui();
+    m_vulkanRenderer.reset();
     ShutdownGLFW();
 }
 
@@ -40,6 +93,9 @@ auto Application::InitGLFW() -> bool {
         return false;
     }
 
+#if SCPP_USE_VULKAN_UI
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+#else
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #if defined(__APPLE__)
@@ -47,6 +103,7 @@ auto Application::InitGLFW() -> bool {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #else
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+#endif
 #endif
 
     m_mainScale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
@@ -59,8 +116,10 @@ auto Application::InitGLFW() -> bool {
         return false;
     }
 
+#if !SCPP_USE_VULKAN_UI
     glfwMakeContextCurrent(m_window);
     glfwSwapInterval(1);
+#endif
     return true;
 }
 
@@ -77,7 +136,9 @@ auto Application::InitImGui() -> bool {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
+#if !SCPP_USE_VULKAN_UI
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport / Platform Windows
+#endif
     io.ConfigViewportsNoDecoration       = false;
     io.ConfigViewportsNoTaskBarIcon      = false;
     io.ConfigWindowsMoveFromTitleBarOnly = true;
@@ -98,8 +159,14 @@ auto Application::InitImGui() -> bool {
     }
 
     // Setup Platform/Renderer backends
+#if SCPP_USE_VULKAN_UI
+    if (!m_vulkanRenderer || !m_vulkanRenderer->InitImGuiBackend()) {
+        return false;
+    }
+#else
     ImGui_ImplGlfw_InitForOpenGL(m_window, true);
     ImGui_ImplOpenGL3_Init(m_glslVersion.data());
+#endif
 
     return true;
 }
@@ -222,14 +289,151 @@ auto Application::LoadFonts() -> bool {
     return true;
 }
 
+auto Application::StartVideoFileSource(const std::filesystem::path& path) noexcept -> bool {
+    if (m_source) {
+        m_source->Stop();
+    }
+
+#if SCPP_USE_VULKAN_UI
+    m_source = m_sourceProvider->CreateVideoFileSource(path);
+#else
+    m_source = m_sourceProvider->CreateVideoFileSource(*m_openclDeviceProvider, path);
+#endif
+    if (!m_source) {
+        std::println("Failed to create video/SRT source");
+        return false;
+    }
+
+    if (m_source->Start() != ErrorCode::None) {
+        std::println("Failed to start video/SRT source: {}", path.string());
+        m_source.reset();
+        return false;
+    }
+
+    return true;
+}
+
+auto Application::LayoutPresetPath(uint32_t presetIndex) const -> std::filesystem::path {
+    return GetRuntimeBasePath() / "layouts" / std::format("layout_p{}.ini", presetIndex);
+}
+
+auto Application::SaveLayoutPreset(uint32_t presetIndex) const noexcept -> bool {
+    if (presetIndex < 1u || presetIndex > 3u) {
+        return false;
+    }
+
+    std::error_code ec;
+    const auto presetPath = LayoutPresetPath(presetIndex);
+    std::filesystem::create_directories(presetPath.parent_path(), ec);
+    if (ec) {
+        std::println("Failed to create layout preset directory '{}': {}", presetPath.parent_path().string(), ec.message());
+        return false;
+    }
+
+    size_t imguiIniSize = 0u;
+    const char* imguiIni = ImGui::SaveIniSettingsToMemory(&imguiIniSize);
+    if (imguiIni == nullptr) {
+        std::println("Failed to read ImGui layout data for preset P{}", presetIndex);
+        return false;
+    }
+
+    std::ofstream out{presetPath, std::ios::binary | std::ios::trunc};
+    if (!out) {
+        std::println("Failed to open layout preset '{}' for writing", presetPath.string());
+        return false;
+    }
+
+    out << "# Scopes++ layout preset v1\n";
+    out << "[ScopesPlusPlus][View]\n";
+    out << "SourcePreview=" << (m_showSourcePreview ? 1 : 0) << '\n';
+    out << "FalseColor=" << (m_showFalseColor ? 1 : 0) << '\n';
+    out << "WFLuma=" << (m_showWFLuma ? 1 : 0) << '\n';
+    out << "WFRgb=" << (m_showWFRgb ? 1 : 0) << '\n';
+    out << "WFRgbParade=" << (m_showWFRgbParade ? 1 : 0) << '\n';
+    out << "WFRgbBlacks=" << (m_showWFRgbBlacks ? 1 : 0) << '\n';
+    out << "WFYuvParade=" << (m_showWFYuvParade ? 1 : 0) << '\n';
+    out << "SCUV=" << (m_showSCUV ? 1 : 0) << '\n';
+    out << "SCXYZ=" << (m_showSCXYZ ? 1 : 0) << '\n';
+    out << "SCDia=" << (m_showSCDia ? 1 : 0) << "\n\n";
+    out << c_layoutIniMarker;
+    out.write(imguiIni, static_cast<std::streamsize>(imguiIniSize));
+
+    if (!out) {
+        std::println("Failed while writing layout preset '{}'", presetPath.string());
+        return false;
+    }
+
+    std::println("Saved layout preset P{} to '{}'", presetIndex, presetPath.string());
+    return true;
+}
+
+auto Application::LoadLayoutPreset(uint32_t presetIndex) noexcept -> bool {
+    if (presetIndex < 1u || presetIndex > 3u) {
+        return false;
+    }
+
+    const auto presetPath = LayoutPresetPath(presetIndex);
+    std::ifstream in{presetPath, std::ios::binary};
+    if (!in) {
+        std::println("Layout preset P{} does not exist at '{}'", presetIndex, presetPath.string());
+        return false;
+    }
+
+    const std::string contents{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+    const auto markerOffset = contents.find(c_layoutIniMarker);
+    if (markerOffset == std::string::npos) {
+        std::println("Layout preset P{} is invalid: missing ImGui layout data", presetIndex);
+        return false;
+    }
+
+    const auto viewSettings = std::string_view{contents}.substr(0u, markerOffset);
+    size_t lineStart = 0u;
+    while (lineStart < viewSettings.size()) {
+        const auto lineEnd = viewSettings.find('\n', lineStart);
+        const auto line = viewSettings.substr(lineStart, lineEnd == std::string_view::npos ? std::string_view::npos : lineEnd - lineStart);
+
+        ParseBoolSetting(line, "SourcePreview"sv, m_showSourcePreview) ||
+            ParseBoolSetting(line, "FalseColor"sv, m_showFalseColor) ||
+            ParseBoolSetting(line, "WFLuma"sv, m_showWFLuma) ||
+            ParseBoolSetting(line, "WFRgb"sv, m_showWFRgb) ||
+            ParseBoolSetting(line, "WFRgbParade"sv, m_showWFRgbParade) ||
+            ParseBoolSetting(line, "WFRgbBlacks"sv, m_showWFRgbBlacks) ||
+            ParseBoolSetting(line, "WFYuvParade"sv, m_showWFYuvParade) ||
+            ParseBoolSetting(line, "SCUV"sv, m_showSCUV) ||
+            ParseBoolSetting(line, "SCXYZ"sv, m_showSCXYZ) ||
+            ParseBoolSetting(line, "SCDia"sv, m_showSCDia);
+
+        if (lineEnd == std::string_view::npos) {
+            break;
+        }
+        lineStart = lineEnd + 1u;
+    }
+
+    const auto imguiIniOffset = markerOffset + c_layoutIniMarker.size();
+    const auto imguiIni = contents.substr(imguiIniOffset);
+    ImGui::LoadIniSettingsFromMemory(imguiIni.data(), imguiIni.size());
+
+    std::println("Loaded layout preset P{} from '{}'", presetIndex, presetPath.string());
+    return true;
+}
+
 void Application::ShutdownImGui() {
+#if SCPP_USE_VULKAN_UI
+    if (m_vulkanRenderer) {
+        m_vulkanRenderer->ShutdownImGuiBackend();
+    }
+#else
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
+#endif
     ImGui::DestroyContext();
 }
 
 void Application::ShutdownGLFW() {
-    glfwDestroyWindow(m_window);
+    if (m_window != nullptr) {
+        glfwDestroyWindow(m_window);
+        m_window = nullptr;
+    }
     glfwTerminate();
 }
 
@@ -246,9 +450,45 @@ void Application::Run() {
         if (m_source) {
             SyncRenderFeaturesFromUI();
             m_source->UpdateOnMainThread();
+#if SCPP_USE_VULKAN_UI
+            if (auto frame = m_source->GetSourcePreviewFrame()) {
+                [[maybe_unused]] const auto uploaded = m_vulkanRenderer->UploadSourcePreview(*frame);
+                if (m_showFalseColor) {
+                    [[maybe_unused]] const auto falseColorRendered = m_vulkanRenderer->RenderFalseColor(m_source->GetRenderSettings());
+                }
+                if (m_showWFLuma) {
+                    [[maybe_unused]] const auto lumaWaveformRendered = m_vulkanRenderer->RenderLumaWaveform(m_source->GetRenderSettings());
+                }
+                if (m_showWFRgb) {
+                    [[maybe_unused]] const auto rgbWaveformRendered = m_vulkanRenderer->RenderRgbWaveform(m_source->GetRenderSettings());
+                }
+                if (m_showWFRgbParade) {
+                    [[maybe_unused]] const auto rgbParadeRendered = m_vulkanRenderer->RenderRgbParade(m_source->GetRenderSettings());
+                }
+                if (m_showWFRgbBlacks) {
+                    [[maybe_unused]] const auto rgbBlacklevelRendered = m_vulkanRenderer->RenderRgbBlacklevel(m_source->GetRenderSettings());
+                }
+                if (m_showWFYuvParade) {
+                    [[maybe_unused]] const auto yuvParadeRendered = m_vulkanRenderer->RenderYuvParade(m_source->GetRenderSettings());
+                }
+                if (m_showSCUV) {
+                    [[maybe_unused]] const auto uvScopeRendered = m_vulkanRenderer->RenderUvScope(m_source->GetRenderSettings());
+                }
+                if (m_showSCXYZ) {
+                    [[maybe_unused]] const auto xyzScopeRendered = m_vulkanRenderer->RenderXyzScope(m_source->GetRenderSettings());
+                }
+                if (m_showSCDia) {
+                    [[maybe_unused]] const auto diamondScopeRendered = m_vulkanRenderer->RenderDiamondScope(m_source->GetRenderSettings());
+                }
+            }
+#endif
         }
 
+#if SCPP_USE_VULKAN_UI
+        m_vulkanRenderer->NewFrame();
+#else
         ImGui_ImplOpenGL3_NewFrame();
+#endif
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
@@ -262,6 +502,9 @@ void Application::Run() {
         // render stuff
 
         ImGui::Render();
+#if SCPP_USE_VULKAN_UI
+        m_vulkanRenderer->RenderFrame(m_clearColor);
+#else
         int display_w, display_h;
         glfwGetFramebufferSize(m_window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
@@ -277,6 +520,7 @@ void Application::Run() {
         }
 
         glfwSwapBuffers(m_window);
+#endif
     }
 }
 
@@ -291,9 +535,24 @@ void Application::UI_Main() noexcept {
     UI_Sources();
 
     if (m_source) {
+#if SCPP_USE_VULKAN_UI
+        UI_VulkanSourcePreview();
+        UI_VulkanFalseColor();
+        UI_VulkanLumaWaveform();
+        UI_VulkanRgbWaveform();
+        UI_VulkanRgbParade();
+        UI_VulkanRgbBlacklevel();
+        UI_VulkanYuvParade();
+        UI_VulkanUvScope();
+        UI_VulkanXyzScope();
+        UI_VulkanDiamondScope();
+        UI_SourceStats();
+        UI_VulkanRenderSettings();
+#else
         UI_ActiveSource();
         UI_SourceStats();
         UI_RenderSettings();
+#endif
     }
 }
 
@@ -321,6 +580,24 @@ void Application::UI_MainMenuBar() noexcept {
         ImGui::MenuItem("UV Vectorscope", nullptr, &m_showSCUV);
         ImGui::MenuItem("CIE 1931 Chromaticity", nullptr, &m_showSCXYZ);
         ImGui::MenuItem("Double Diamond", nullptr, &m_showSCDia);
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Save layout")) {
+            for (uint32_t presetIndex = 1u; presetIndex <= 3u; ++presetIndex) {
+                if (ImGui::MenuItem(std::format("P{}", presetIndex).c_str())) {
+                    SaveLayoutPreset(presetIndex);
+                }
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Load Layout")) {
+            for (uint32_t presetIndex = 1u; presetIndex <= 3u; ++presetIndex) {
+                const auto presetExists = std::filesystem::exists(LayoutPresetPath(presetIndex));
+                if (ImGui::MenuItem(std::format("P{}", presetIndex).c_str(), nullptr, false, presetExists)) {
+                    LoadLayoutPreset(presetIndex);
+                }
+            }
+            ImGui::EndMenu();
+        }
         ImGui::EndMenu();
     }
 
@@ -357,27 +634,66 @@ void Application::UI_Sources() noexcept {
 
     ImGui::Begin("Sources");
 
-    ImGui::SeparatorText("Video File");
+    ImGui::SeparatorText("Render Backends");
+#if SCPP_USE_VULKAN_UI
+    ImGui::TextUnformatted("UI Mode: Vulkan");
+#else
+    ImGui::TextUnformatted("UI Mode: OpenGL/OpenCL");
+#endif
+    if (m_vulkanRenderer && m_vulkanRenderer->IsInitialized()) {
+        ImGui::Text("Vulkan: %s", m_vulkanRenderer->GetDeviceName().data());
+    } else {
+        const auto error = m_vulkanRenderer ? m_vulkanRenderer->GetLastError() : "not created"sv;
+        ImGui::Text("Vulkan: unavailable (%s)", error.data());
+    }
+    ImGui::Text("OpenCL/OpenGL: %s", m_openclDeviceProvider && m_openclDeviceProvider->IsInitialized() ? "available" : "unavailable");
+
+    ImGui::SeparatorText("File / SRT URL");
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::InputText("##video-file-path", m_videoFilePath.data(), m_videoFilePath.size());
 
-    if (ImGui::Button("Open Video File")) {
-        if (m_source) {
-            m_source->Stop();
-        }
+    const bool openCLSourcesAvailable = m_openclDeviceProvider && m_openclDeviceProvider->IsInitialized();
+    const bool videoFileAvailable     = openCLSourcesAvailable
+#if SCPP_USE_VULKAN_UI
+                                    || (m_vulkanRenderer && m_vulkanRenderer->IsInitialized())
+#endif
+        ;
+    if (!videoFileAvailable) {
+        ImGui::BeginDisabled();
+    }
 
-        m_source = m_sourceProvider->CreateVideoFileSource(*m_openclDeviceProvider, m_videoFilePath.data());
-        if (!m_source) {
-            std::println("Failed to create video file source");
-        } else if (m_source->Start() != ErrorCode::None) {
-            std::println("Failed to start video file source: {}", m_videoFilePath.data());
-            m_source.reset();
+    if (ImGui::Button("Open Source")) {
+        StartVideoFileSource(m_videoFilePath.data());
+    }
+    if (!videoFileAvailable) {
+        ImGui::EndDisabled();
+    }
+
+    if (m_source) {
+        ImGui::Spacing();
+        ImGui::SeparatorText("Current Source");
+        ImGui::Text("Name: %s", m_source->GetName().data());
+        ImGui::Text("State: %s", m_source->IsRunning() ? "Running" : "Stopped");
+
+        if (m_source->IsRunning()) {
+            if (ImGui::Button("Stop Source")) {
+                m_source->Stop();
+            }
+        } else {
+            if (ImGui::Button("Start Source")) {
+                if (m_source->Start() != ErrorCode::None) {
+                    std::println("Failed to start source: {}", m_source->GetName());
+                }
+            }
         }
     }
 
     ImGui::Spacing();
     ImGui::SeparatorText("Built-in");
 
+    if (!openCLSourcesAvailable) {
+        ImGui::BeginDisabled();
+    }
     if (ImGui::BeginTable("Sources Table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("Select", ImGuiTableColumnFlags_::ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableSetupColumn("Name");
@@ -406,6 +722,10 @@ void Application::UI_Sources() noexcept {
             ImGui::TextUnformatted(source.details.c_str());
         }
         ImGui::EndTable();
+    }
+    if (!openCLSourcesAvailable) {
+        ImGui::EndDisabled();
+        ImGui::TextWrapped("Built-in sources are waiting for Vulkan render pipeline support.");
     }
     ImGui::End();
 }
@@ -496,6 +816,345 @@ void Application::UI_SourcePreview(const scpp::TargetTextures* sourceTextures) n
         return;
     }
     ImGuiUtilImageRender(sourcePreview, ScaleBehavior::ScaleToFit);
+    ImGui::End();
+}
+
+void Application::UI_VulkanSourcePreview() noexcept {
+    if (!m_showSourcePreview || !m_vulkanRenderer || !m_vulkanRenderer->HasSourcePreview()) {
+        return;
+    }
+
+    const auto& sourceStats = m_source->GetStats();
+    const auto sourceAspect = WindowAspectData{
+        .targetAspectRatio = static_cast<float>(sourceStats.sourceDims.width) / static_cast<float>(sourceStats.sourceDims.height),
+        .offset            = ImVec2(0.f, 32.f)};
+
+    const auto sourceDims = m_vulkanRenderer->GetSourcePreviewDims();
+
+    ImGui::SetNextWindowSizeConstraints(ImVec2(160, 32 + 90), c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&sourceAspect);
+    if (!ImGui::Begin("Source Preview", &m_showSourcePreview, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto imgSize    = ImGuiUtilGetImageSize(sourceDims.ToImVec2(), ScaleBehavior::ScaleToFit);
+    const auto [uv0, uv1] = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+    ImGui::ImageWithBg(m_vulkanRenderer->GetSourcePreviewTextureID(), imgSize, uv0, uv1, c_bgColor);
+    ImGui::End();
+}
+
+void Application::UI_VulkanFalseColor() noexcept {
+    if (!m_showFalseColor || !m_vulkanRenderer || !m_vulkanRenderer->HasFalseColor()) {
+        return;
+    }
+
+    const auto& sourceStats = m_source->GetStats();
+    const auto sourceAspect = WindowAspectData{
+        .targetAspectRatio = static_cast<float>(sourceStats.sourceDims.width) / static_cast<float>(sourceStats.sourceDims.height),
+        .offset            = ImVec2(0.f, 32.f)};
+
+    const auto sourceDims = m_vulkanRenderer->GetSourcePreviewDims();
+
+    ImGui::SetNextWindowSizeConstraints(ImVec2(160, 32 + 90), c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&sourceAspect);
+    if (!ImGui::Begin("False Color", &m_showFalseColor, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto imgSize    = ImGuiUtilGetImageSize(sourceDims.ToImVec2(), ScaleBehavior::ScaleToFit);
+    const auto [uv0, uv1] = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+
+    const auto topLeft = ImGui::GetCursorScreenPos();
+    ImGui::ImageWithBg(m_vulkanRenderer->GetSourcePreviewTextureID(), imgSize, uv0, uv1, c_bgColor);
+
+    ImGui::SetCursorScreenPos(topLeft);
+    ImGui::ImageWithBg(m_vulkanRenderer->GetFalseColorTextureID(), imgSize, uv0, uv1, ImVec4(0.f, 0.f, 0.f, 0.f));
+    ImGui::End();
+}
+
+void Application::UI_VulkanLumaWaveform() noexcept {
+    if (!m_showWFLuma || !m_vulkanRenderer || !m_vulkanRenderer->HasLumaWaveform()) {
+        return;
+    }
+
+    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+    if (!ImGui::Begin("Luminance Waveform", &m_showWFLuma, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto imgSize    = ImGuiUtilGetImageSize(ImVec2(580.f, 256.f), ScaleBehavior::ScaleToFit);
+    const auto [uv0, uv1] = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+    ImGui::ImageWithBg(m_vulkanRenderer->GetLumaWaveformTextureID(), imgSize, uv0, uv1, ImVec4(0.f, 0.f, 0.f, 1.f));
+    ImGui::End();
+}
+
+void Application::UI_VulkanRgbWaveform() noexcept {
+    if (!m_showWFRgb || !m_vulkanRenderer || !m_vulkanRenderer->HasRgbWaveform()) {
+        return;
+    }
+
+    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+    if (!ImGui::Begin("RGB Waveform", &m_showWFRgb, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto imgSize    = ImGuiUtilGetImageSize(ImVec2(580.f, 256.f), ScaleBehavior::ScaleToFit);
+    const auto [uv0, uv1] = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+    const auto topLeft    = ImGui::GetCursorScreenPos();
+    ImGui::ImageWithBg(m_vulkanRenderer->GetRgbWaveformTextureID(), imgSize, uv0, uv1, c_bgColor);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    for (int i = 0; i <= 256; i += 32) {
+        const float y = topLeft.y + imgSize.y - (i / 255.f) * imgSize.y;
+        drawList->AddLine(ImVec2(topLeft.x, y), ImVec2(topLeft.x + imgSize.x, y), c_lineColor, c_lineThickness);
+    }
+
+    ImGui::End();
+}
+
+void Application::UI_VulkanRgbParade() noexcept {
+    if (!m_showWFRgbParade || !m_vulkanRenderer || !m_vulkanRenderer->HasRgbParade()) {
+        return;
+    }
+
+    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+    if (!ImGui::Begin("RGB Parade", &m_showWFRgbParade, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto imgSize    = ImGuiUtilGetImageSize(ImVec2(580.f, 256.f), ScaleBehavior::ScaleToFit);
+    const auto [uv0, uv1] = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+    const auto topLeft    = ImGui::GetCursorScreenPos();
+    ImGui::ImageWithBg(m_vulkanRenderer->GetRgbParadeTextureID(), imgSize, uv0, uv1, c_bgColor);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    for (int i = 0; i <= 256; i += 32) {
+        const float y = topLeft.y + imgSize.y - (i / 255.f) * imgSize.y;
+        drawList->AddLine(ImVec2(topLeft.x, y), ImVec2(topLeft.x + imgSize.x, y), c_lineColor, c_lineThickness);
+    }
+
+    const auto p1 = ImGuiUtilRelPosToImagePos(ImVec2(1.f / 3.f, 0.f), imgSize, topLeft);
+    const auto p2 = ImGuiUtilRelPosToImagePos(ImVec2(1.f / 3.f, 1.f), imgSize, topLeft);
+    drawList->AddLine(p1, p2, c_lineColor, c_lineThickness);
+
+    const auto p3 = ImGuiUtilRelPosToImagePos(ImVec2(2.f / 3.f, 0.f), imgSize, topLeft);
+    const auto p4 = ImGuiUtilRelPosToImagePos(ImVec2(2.f / 3.f, 1.f), imgSize, topLeft);
+    drawList->AddLine(p3, p4, c_lineColor, c_lineThickness);
+
+    ImGui::End();
+}
+
+void Application::UI_VulkanRgbBlacklevel() noexcept {
+    if (!m_showWFRgbBlacks || !m_vulkanRenderer || !m_vulkanRenderer->HasRgbBlacklevel()) {
+        return;
+    }
+
+    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+    if (!ImGui::Begin("RGB Blacklevel", &m_showWFRgbBlacks, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto imgSize    = ImGuiUtilGetImageSize(ImVec2(580.f, 256.f), ScaleBehavior::ScaleToFit);
+    const auto [uv0, uv1] = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+    const auto topLeft    = ImGui::GetCursorScreenPos();
+    ImGui::ImageWithBg(m_vulkanRenderer->GetRgbBlacklevelTextureID(), imgSize, uv0, uv1, c_bgColor);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    constexpr auto increment = 1.f / 35.f;
+    for (int i = 0; i < 35; ++i) {
+        const auto color = (i % 5 == 0) ? c_lineColor : c_lineColorQuart;
+        const auto p1 = ImGuiUtilRelPosToImagePos(ImVec2(0.f, i * increment), imgSize, topLeft);
+        const auto p2 = ImGuiUtilRelPosToImagePos(ImVec2(1.f, i * increment), imgSize, topLeft);
+        drawList->AddLine(p1, p2, color, c_lineThickness);
+    }
+
+    ImGui::End();
+}
+
+void Application::UI_VulkanYuvParade() noexcept {
+    if (!m_showWFYuvParade || !m_vulkanRenderer || !m_vulkanRenderer->HasYuvParade()) {
+        return;
+    }
+
+    ImGui::SetNextWindowSizeConstraints(c_uiMinWFSize, c_uiMaxSize, WindowSizeConstraints::AspectWithOffset, (void*)&c_uiWFAspect);
+    if (!ImGui::Begin("YUV Parade", &m_showWFYuvParade, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto imgSize    = ImGuiUtilGetImageSize(ImVec2(580.f, 256.f), ScaleBehavior::ScaleToFit);
+    const auto [uv0, uv1] = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+    const auto topLeft    = ImGui::GetCursorScreenPos();
+    ImGui::ImageWithBg(m_vulkanRenderer->GetYuvParadeTextureID(), imgSize, uv0, uv1, c_bgColor);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    for (int i = 0; i <= 256; i += 32) {
+        const auto p1 = ImGuiUtilRelPosToImagePos(ImVec2(0.f, i / 255.f), imgSize, topLeft);
+        const auto p2 = ImGuiUtilRelPosToImagePos(ImVec2(1.f, i / 255.f), imgSize, topLeft);
+        drawList->AddLine(p1, p2, c_lineColor, c_lineThickness);
+    }
+
+    const auto p1 = ImGuiUtilRelPosToImagePos(ImVec2(1.f / 3.f, 0.f), imgSize, topLeft);
+    const auto p2 = ImGuiUtilRelPosToImagePos(ImVec2(1.f / 3.f, 1.f), imgSize, topLeft);
+    drawList->AddLine(p1, p2, c_lineColor, c_lineThickness);
+
+    const auto p3 = ImGuiUtilRelPosToImagePos(ImVec2(2.f / 3.f, 0.f), imgSize, topLeft);
+    const auto p4 = ImGuiUtilRelPosToImagePos(ImVec2(2.f / 3.f, 1.f), imgSize, topLeft);
+    drawList->AddLine(p3, p4, c_lineColor, c_lineThickness);
+
+    ImGui::End();
+}
+
+void Application::UI_VulkanUvScope() noexcept {
+    if (!m_showSCUV || !m_vulkanRenderer || !m_vulkanRenderer->HasUvScope()) {
+        return;
+    }
+
+    ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
+    if (!ImGui::Begin("UV Vectorscope", &m_showSCUV, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto imgSize    = ImGuiUtilGetImageSize(ImVec2(256.f, 256.f), ScaleBehavior::ScaleToFit);
+    const auto [uv0, uv1] = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+    const auto topLeft    = ImGui::GetCursorScreenPos();
+    ImGui::ImageWithBg(m_vulkanRenderer->GetUvScopeTextureID(), imgSize, uv0, uv1, c_bgColor);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const auto p0        = ImGuiUtilRelPosToImagePos(ImVec2(.5f, .5f), imgSize, topLeft);
+
+    for (size_t i = 0; i < c_uvVectors.size() - 1; ++i) {
+        const auto uva = c_uvVectors[i];
+        const auto uvb = c_uvVectors[i + 1];
+        const auto pa  = ImGuiUtilRelPosToImagePos(ImVec2(uva.x, uva.y), imgSize, topLeft);
+        const auto pb  = ImGuiUtilRelPosToImagePos(ImVec2(uvb.x, uvb.y), imgSize, topLeft);
+        drawList->AddLine(pa, pb, c_lineColor, c_lineThickness);
+        drawList->AddLine(p0, pa, c_lineColor, c_lineThickness);
+    }
+
+    ImGui::End();
+}
+
+void Application::UI_VulkanXyzScope() noexcept {
+    if (!m_showSCXYZ || !m_vulkanRenderer || !m_vulkanRenderer->HasXyzScope()) {
+        return;
+    }
+
+    ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
+    if (!ImGui::Begin("CIE 1931 Chromaticity", &m_showSCXYZ, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto imgSize    = ImGuiUtilGetImageSize(ImVec2(256.f, 256.f), ScaleBehavior::ScaleToFit);
+    const auto [uv0, uv1] = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+    const auto topLeft    = ImGui::GetCursorScreenPos();
+    ImGui::ImageWithBg(m_vulkanRenderer->GetXyzScopeTextureID(), imgSize, uv0, uv1, c_bgColor);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    for (int i = 0; i <= 10; ++i) {
+        const float x     = topLeft.x + (i / 10.f) * imgSize.x;
+        const float y     = topLeft.y + (i / 10.f) * imgSize.y;
+        const ImU32 color = (i % 2 == 0) ? c_lineColorHalf : c_lineColorQuart;
+        drawList->AddLine(ImVec2(x, topLeft.y), ImVec2(x, topLeft.y + imgSize.y), color, c_lineThickness);
+        drawList->AddLine(ImVec2(topLeft.x, y), ImVec2(topLeft.x + imgSize.x, y), color, c_lineThickness);
+    }
+
+    const auto& renderSettings = m_source->GetRenderSettings();
+    for (const auto colorSpace : c_cieTriangleColorspaces) {
+        const auto primaries = GetCIEPrimaries(colorSpace);
+        const auto p1 = ImVec2(topLeft.x + primaries[0].x * imgSize.x, topLeft.y + (1.f - primaries[0].y) * imgSize.y);
+        const auto p2 = ImVec2(topLeft.x + primaries[1].x * imgSize.x, topLeft.y + (1.f - primaries[1].y) * imgSize.y);
+        const auto p3 = ImVec2(topLeft.x + primaries[2].x * imgSize.x, topLeft.y + (1.f - primaries[2].y) * imgSize.y);
+        const ImU32 color = (colorSpace == renderSettings.colorSpace) ? c_lineColor : c_lineColorHalf;
+        drawList->AddTriangle(p1, p2, p3, color);
+    }
+
+    for (size_t i = 0; i < c_cieLocus.size() - 1; ++i) {
+        const auto p1 = ImVec2(topLeft.x + c_cieLocus[i].x * imgSize.x, topLeft.y + (1.f - c_cieLocus[i].y) * imgSize.y);
+        const auto p2 = ImVec2(topLeft.x + c_cieLocus[i + 1].x * imgSize.x, topLeft.y + (1.f - c_cieLocus[i + 1].y) * imgSize.y);
+        drawList->AddLine(p1, p2, c_lineColorHalf, c_lineThickness);
+    }
+
+    ImGui::End();
+}
+
+void Application::UI_VulkanDiamondScope() noexcept {
+    if (!m_showSCDia || !m_vulkanRenderer || !m_vulkanRenderer->HasDiamondScope()) {
+        return;
+    }
+
+    ImGui::SetNextWindowSizeConstraints(c_uiMinSCSize, c_uiMaxSize, WindowSizeConstraints::SquareWithOffset, (void*)&c_uiSCWindowSizeOffset);
+    if (!ImGui::Begin("Double Diamond", &m_showSCDia, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto imgSize    = ImGuiUtilGetImageSize(ImVec2(256.f, 256.f), ScaleBehavior::ScaleToFit);
+    const auto [uv0, uv1] = ImGuiUtilGetUVs(FlipBehavior::DoNotFlip);
+    const auto topLeft    = ImGui::GetCursorScreenPos();
+    ImGui::ImageWithBg(m_vulkanRenderer->GetDiamondScopeTextureID(), imgSize, uv0, uv1, c_bgColor);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    for (size_t i = 0; i < c_diaVerts.size() - 1; ++i) {
+        const auto p1 = ImGuiUtilRelPosToImagePos(c_diaVerts[i], imgSize, topLeft);
+        const auto p2 = ImGuiUtilRelPosToImagePos(c_diaVerts[i + 1], imgSize, topLeft);
+        drawList->AddLine(p1, p2, c_lineColor, c_lineThickness);
+    }
+
+    ImGui::End();
+}
+
+void Application::UI_VulkanRenderSettings() noexcept {
+    if (!m_vulkanRenderer) {
+        return;
+    }
+
+    auto& renderSettings = m_source->GetRenderSettings();
+
+    ImGui::Begin("Render Settings", nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGui::SeparatorText("Source");
+
+    if (ImGui::BeginCombo(
+            "Color Space",
+            SourceColorSpaceToString(renderSettings.colorSpace).data())) {
+        for (int i = 0; i < static_cast<int>(SourceColorSpace::max); ++i) {
+            const auto colorSpace = static_cast<SourceColorSpace>(i);
+            if (ImGui::Selectable(SourceColorSpaceToString(colorSpace).data(), renderSettings.colorSpace == colorSpace)) {
+                renderSettings.colorSpace = colorSpace;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    if (ImGui::BeginCombo(
+            "YUV Range",
+            SourceYUVRangeToString(renderSettings.yuvRange).data())) {
+        for (int i = 0; i < static_cast<int>(SourceYUVRange::max); ++i) {
+            const auto yuvRange = static_cast<SourceYUVRange>(i);
+            if (ImGui::Selectable(SourceYUVRangeToString(yuvRange).data(), renderSettings.yuvRange == yuvRange)) {
+                renderSettings.yuvRange = yuvRange;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::SeparatorText("False Color");
+
+    if (ImGui::BeginCombo("False Color Map", m_vulkanRenderer->GetSelectedFalseColorMapName().data())) {
+        for (const auto [name, map] : c_falseColorMapsSpan) {
+            if (ImGui::Selectable(name.data(), m_vulkanRenderer->GetSelectedFalseColorMapName() == name)) {
+                m_vulkanRenderer->SetFalseColorMap(map, name);
+            }
+        }
+        ImGui::EndCombo();
+    }
+
     ImGui::End();
 }
 

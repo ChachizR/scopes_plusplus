@@ -1,0 +1,91 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D sourceImage;
+layout(set = 0, binding = 1) buffer DiamondHistogram {
+    uint bins[];
+} histogram;
+
+layout(push_constant) uniform PushConstants {
+    uint width;
+    uint height;
+    int colorSpace;
+} pc;
+
+const uint SC_WIDTH = 256;
+const uint SC_HEIGHT = 256;
+
+const int CS_BT601_525 = 1;
+const int CS_BT601_625 = 2;
+const int CS_BT709 = 3;
+const int CS_BT2020 = 4;
+const int CS_SRGB = 5;
+
+float eotf_sRGB(float value) {
+    return (value <= 0.04045) ? (value / 12.92) : pow((value + 0.055) / 1.055, 2.4);
+}
+
+float eotf_BT709(float value) {
+    return (value <= 0.08145) ? (value / 4.5) : pow((value + 0.099) / 1.099, 1.0 / 0.45);
+}
+
+float oetf_BT709(float value) {
+    return (value <= 0.018) ? (value * 4.5) : (1.099 * pow(max(value, 0.0), 0.45) - 0.099);
+}
+
+float eotf(float value, int colorSpace) {
+    switch (colorSpace) {
+    case CS_SRGB:
+        return eotf_sRGB(value);
+    case CS_BT601_525:
+    case CS_BT601_625:
+    case CS_BT709:
+    case CS_BT2020:
+        return eotf_BT709(value);
+    default:
+        return value;
+    }
+}
+
+vec3 eotf3(vec3 value, int colorSpace) {
+    return vec3(eotf(value.r, colorSpace), eotf(value.g, colorSpace), eotf(value.b, colorSpace));
+}
+
+vec3 oetf_BT709_3(vec3 value) {
+    return vec3(oetf_BT709(value.r), oetf_BT709(value.g), oetf_BT709(value.b));
+}
+
+vec3 linearRGB_to_linearRGB_709(vec3 rgb, int colorSpace) {
+    switch (colorSpace) {
+    case CS_BT601_525:
+        return mat3(0.93954194, 0.01777223, -0.00162160, 0.05018133, 0.96579289, -0.00436975, 0.01027656, 0.01643492, 1.00599146) * rgb;
+    case CS_BT601_625:
+        return mat3(1.04404318, 0.00000001, -0.00000000, -0.04404324, 1.00000000, 0.01179338, 0.00000000, -0.00000001, 0.98820668) * rgb;
+    case CS_BT2020:
+        return mat3(1.66049099, -0.12455052, -0.01815076, -0.58764112, 1.13289988, -0.10057890, -0.07284993, -0.00834943, 1.11872983) * rgb;
+    default:
+        return rgb;
+    }
+}
+
+void accumulatePoint(float x, float y) {
+    const uint scopeX = uint(clamp(floor(x * 255.0), 0.0, 255.0));
+    const uint scopeY = uint(clamp(floor((1.0 - y) * 255.0), 0.0, 255.0));
+    atomicAdd(histogram.bins[scopeY * SC_WIDTH + scopeX], 1u);
+}
+
+void main() {
+    const uvec2 xy = gl_GlobalInvocationID.xy;
+    if (xy.x >= pc.width || xy.y >= pc.height) {
+        return;
+    }
+
+    const vec2 uv = (vec2(xy) + vec2(0.5)) / vec2(pc.width, pc.height);
+    const vec3 sourceLinear = eotf3(texture(sourceImage, uv).rgb, pc.colorSpace);
+    const vec3 linear709 = linearRGB_to_linearRGB_709(sourceLinear, pc.colorSpace);
+    const vec3 rgb = clamp(oetf_BT709_3(linear709), 0.0, 1.0);
+
+    accumulatePoint(-0.5 * rgb.g + 0.5 * rgb.b + 0.5, 0.25 * rgb.g + 0.25 * rgb.b + 0.5);
+    accumulatePoint(-0.5 * rgb.g + 0.5 * rgb.r + 0.5, -0.25 * rgb.g - 0.25 * rgb.r + 0.5);
+}

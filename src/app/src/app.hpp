@@ -7,6 +7,7 @@
 #include "cl_renderer.hpp"
 #include "imgui_util.hpp"
 #include "source_provider.hpp"
+#include "vk_renderer.hpp"
 
 namespace scpp {
 
@@ -39,12 +40,13 @@ private:
     bool m_showSCDia{true};
 
     std::unique_ptr<scpp::OpenCLDeviceProvider> m_openclDeviceProvider = nullptr;
+    std::unique_ptr<scpp::VulkanRenderer>       m_vulkanRenderer       = nullptr;
 
     std::unique_ptr<SourceProvider> m_sourceProvider = nullptr;
     std::unique_ptr<VideoSource>    m_source         = nullptr;
 
 public:
-    Application();
+    explicit Application(std::optional<std::filesystem::path> initialVideoFile = std::nullopt);
 
     ~Application();
 
@@ -58,6 +60,11 @@ private:
     void SetImGuiStyle();
 
     auto LoadFonts() -> bool;
+    auto StartVideoFileSource(const std::filesystem::path& path) noexcept -> bool;
+    auto SaveLayoutPreset(uint32_t presetIndex) const noexcept -> bool;
+    auto LoadLayoutPreset(uint32_t presetIndex) noexcept -> bool;
+    [[nodiscard]]
+    auto LayoutPresetPath(uint32_t presetIndex) const -> std::filesystem::path;
 
     void ShutdownImGui();
 
@@ -88,6 +95,17 @@ private:
     void UI_SourceStats() noexcept;
     void UI_RenderSettings() noexcept;
     void UI_SourcePreview(const scpp::TargetTextures* sourceTextures) noexcept;
+    void UI_VulkanSourcePreview() noexcept;
+    void UI_VulkanFalseColor() noexcept;
+    void UI_VulkanLumaWaveform() noexcept;
+    void UI_VulkanRgbWaveform() noexcept;
+    void UI_VulkanRgbParade() noexcept;
+    void UI_VulkanRgbBlacklevel() noexcept;
+    void UI_VulkanYuvParade() noexcept;
+    void UI_VulkanUvScope() noexcept;
+    void UI_VulkanXyzScope() noexcept;
+    void UI_VulkanDiamondScope() noexcept;
+    void UI_VulkanRenderSettings() noexcept;
     void UI_FalseColor(const scpp::TargetTextures* sourceTextures) noexcept;
     void UI_Waveforms(const scpp::TargetTextures* sourceTextures) noexcept;
     void UI_Scopes(const scpp::TargetTextures* sourceTextures) noexcept;

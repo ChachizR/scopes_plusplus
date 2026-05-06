@@ -1,0 +1,51 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) readonly buffer RgbHistogram {
+    uint bins[];
+} histogram;
+layout(set = 0, binding = 1, rgba8) uniform writeonly image2D paradeImage;
+
+layout(push_constant) uniform PushConstants {
+    uint sourceWidth;
+    uint sourceHeight;
+    float brightness;
+} pc;
+
+const uint WF_WIDTH = 580;
+const uint WF_HEIGHT = 256;
+const uint THIRD_WIDTH = WF_WIDTH / 3u;
+
+void main() {
+    const uvec2 xy = gl_GlobalInvocationID.xy;
+    if (xy.x >= WF_WIDTH || xy.y >= WF_HEIGHT) {
+        return;
+    }
+
+    const uint bin = WF_HEIGHT - 1u - xy.y;
+    const uint sourceX = min((xy.x % THIRD_WIDTH) * 3u, WF_WIDTH - 3u);
+
+    float r = 0.0;
+    float g = 0.0;
+    float b = 0.0;
+
+    if (xy.x < THIRD_WIDTH) {
+        const uint base0 = (bin * WF_WIDTH + sourceX + 0u) * 3u;
+        const uint base1 = (bin * WF_WIDTH + sourceX + 1u) * 3u;
+        const uint base2 = (bin * WF_WIDTH + sourceX + 2u) * 3u;
+        r = float(histogram.bins[base0 + 0u] + histogram.bins[base1 + 0u] + histogram.bins[base2 + 0u]) * pc.brightness / (3.0 * 255.0);
+    } else if (xy.x < 2u * THIRD_WIDTH) {
+        const uint base0 = (bin * WF_WIDTH + sourceX + 0u) * 3u;
+        const uint base1 = (bin * WF_WIDTH + sourceX + 1u) * 3u;
+        const uint base2 = (bin * WF_WIDTH + sourceX + 2u) * 3u;
+        g = float(histogram.bins[base0 + 1u] + histogram.bins[base1 + 1u] + histogram.bins[base2 + 1u]) * pc.brightness / (3.0 * 255.0);
+    } else {
+        const uint base0 = (bin * WF_WIDTH + sourceX + 0u) * 3u;
+        const uint base1 = (bin * WF_WIDTH + sourceX + 1u) * 3u;
+        const uint base2 = (bin * WF_WIDTH + sourceX + 2u) * 3u;
+        b = float(histogram.bins[base0 + 2u] + histogram.bins[base1 + 2u] + histogram.bins[base2 + 2u]) * pc.brightness / (3.0 * 255.0);
+    }
+
+    imageStore(paradeImage, ivec2(xy), vec4(clamp(vec3(r, g, b), vec3(0.0), vec3(1.0)), 1.0));
+}

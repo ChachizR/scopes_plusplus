@@ -7,9 +7,19 @@ int main(int argc, char** argv) {
         scpp::InitializeRuntimePaths(argv[0]);
     }
 
-    scpp::Application app;
+    try {
+        std::optional<std::filesystem::path> initialVideoFile;
+        if (argc > 1 && argv[1] != nullptr) {
+            initialVideoFile = std::filesystem::path{argv[1]};
+        }
 
-    app.Run();
+        scpp::Application app{initialVideoFile};
+
+        app.Run();
+    } catch (const std::exception& exception) {
+        std::println("Scopes++ failed to start: {}", exception.what());
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }
