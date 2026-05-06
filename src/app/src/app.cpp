@@ -357,6 +357,27 @@ void Application::UI_Sources() noexcept {
 
     ImGui::Begin("Sources");
 
+    ImGui::SeparatorText("Video File");
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputText("##video-file-path", m_videoFilePath.data(), m_videoFilePath.size());
+
+    if (ImGui::Button("Open Video File")) {
+        if (m_source) {
+            m_source->Stop();
+        }
+
+        m_source = m_sourceProvider->CreateVideoFileSource(*m_openclDeviceProvider, m_videoFilePath.data());
+        if (!m_source) {
+            std::println("Failed to create video file source");
+        } else if (m_source->Start() != ErrorCode::None) {
+            std::println("Failed to start video file source: {}", m_videoFilePath.data());
+            m_source.reset();
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Built-in");
+
     if (ImGui::BeginTable("Sources Table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("Select", ImGuiTableColumnFlags_::ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableSetupColumn("Name");

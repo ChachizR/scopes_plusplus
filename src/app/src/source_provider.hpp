@@ -28,6 +28,9 @@ public:
     auto CreateSource(const OpenCLDeviceProvider& deviceProviderRef, const SourceRef& source) const
         -> std::unique_ptr<VideoSource>;
 
+    [[nodiscard]]
+    auto CreateVideoFileSource(const OpenCLDeviceProvider& deviceProviderRef, const std::filesystem::path& path) const
+        -> std::unique_ptr<VideoSource>;
 };
 
 } // namespace scpp

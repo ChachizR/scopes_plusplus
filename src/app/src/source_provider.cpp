@@ -1,6 +1,7 @@
 #include "source_provider.hpp"
 
 #include "test_pattern_source.hpp"
+#include "video_file_source.hpp"
 
 namespace scpp {
 
@@ -18,4 +19,10 @@ auto SourceProvider::CreateSource(const OpenCLDeviceProvider& deviceProviderRef,
 
     return nullptr;
 }
+
+auto SourceProvider::CreateVideoFileSource(const OpenCLDeviceProvider& deviceProviderRef, const std::filesystem::path& path) const
+    -> std::unique_ptr<VideoSource> {
+    return std::make_unique<VideoFileSource>(deviceProviderRef, path);
+}
+
 } // namespace scpp

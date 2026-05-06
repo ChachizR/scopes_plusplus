@@ -1,5 +1,13 @@
 project(ScopesPlusPlusMain)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
+    libavformat
+    libavcodec
+    libavutil
+    libswscale
+)
+
 # ## Main Executable
 file(GLOB_RECURSE APP_HEADERS CONFIGURE_DEPENDS "./src/*.hpp")
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS "./src/*.cpp")
@@ -44,6 +52,7 @@ source_group(
 
 # ## IMGUI
 target_link_libraries(${PROJECT_NAME} PRIVATE imgui)
+target_link_libraries(${PROJECT_NAME} PRIVATE PkgConfig::FFMPEG)
 
 # ## OpenGL
 find_package(OpenGL REQUIRED)

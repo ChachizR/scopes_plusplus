@@ -25,6 +25,7 @@ private:
     ImVec4 m_clearColor{0.05f, 0.05f, 0.05f, 1.00f};
 
     ImFont* m_fontRoboto{nullptr};
+    std::array<char, 1024> m_videoFilePath{};
 
     bool m_showSourcePreview{true};
     bool m_showFalseColor{true};
