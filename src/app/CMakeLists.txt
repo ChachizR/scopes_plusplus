@@ -7,11 +7,13 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libavutil
     libswscale
 )
+find_package(Vulkan REQUIRED)
 
 # ## Main Executable
 file(GLOB_RECURSE APP_HEADERS CONFIGURE_DEPENDS "./src/*.hpp")
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS "./src/*.cpp")
 file(GLOB_RECURSE APP_CL_SOURCES CONFIGURE_DEPENDS "./kernels/*.cl")
+file(GLOB_RECURSE APP_VK_SHADERS CONFIGURE_DEPENDS "./shaders/*")
 
 if(NOT SCPP_ENABLE_NDI)
     list(FILTER APP_HEADERS EXCLUDE REGEX ".*/ndi_source(_provider)?\\.hpp$")
@@ -21,6 +23,7 @@ endif()
 add_executable(${PROJECT_NAME} ./src/main.cpp ${APP_SOURCES})
 target_sources(${PROJECT_NAME} PRIVATE ${APP_HEADERS})
 target_sources(${PROJECT_NAME} PRIVATE ${APP_CL_SOURCES})
+target_sources(${PROJECT_NAME} PRIVATE ${APP_VK_SHADERS})
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     OUTPUT_NAME "scopes++"
@@ -50,9 +53,16 @@ source_group(
     FILES ${APP_CL_SOURCES}
 )
 
+source_group(
+    TREE ${CMAKE_CURRENT_SOURCE_DIR}/shaders
+    PREFIX "Vulkan Shaders"
+    FILES ${APP_VK_SHADERS}
+)
+
 # ## IMGUI
 target_link_libraries(${PROJECT_NAME} PRIVATE imgui)
 target_link_libraries(${PROJECT_NAME} PRIVATE PkgConfig::FFMPEG)
+target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan)
 
 # ## OpenGL
 find_package(OpenGL REQUIRED)
@@ -60,17 +70,16 @@ find_package(OpenGL REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::GL)
 
 # ## OpenCL
-find_package(OpenCL REQUIRED)
+find_library(OpenCL_LIBRARY REQUIRED NAMES OpenCL)
 
 target_include_directories(${PROJECT_NAME}
     PRIVATE
     $<TARGET_PROPERTY:opencl_headers,INTERFACE_INCLUDE_DIRECTORIES>
-    ${OpenCL_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
-    ${OpenCL_LIBRARIES}
+    ${OpenCL_LIBRARY}
 )
 
 # ## GLM
@@ -123,6 +132,34 @@ add_custom_target(copy_kernels ALL
 
 add_dependencies(${PROJECT_NAME} copy_kernels)
 
+if(SCPP_USE_VULKAN_UI)
+    set(APP_SPIRV_OUTPUT_DIR "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders")
+    set(APP_SPIRV_OUTPUTS)
+
+    foreach(shader ${APP_VK_SHADERS})
+        get_filename_component(shader_name "${shader}" NAME)
+        set(shader_output "${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader_name}.spv")
+        add_custom_command(
+            OUTPUT "${shader_output}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+            COMMAND Vulkan::glslc "${shader}" -o "${shader_output}"
+            DEPENDS "${shader}"
+            COMMENT "Compiling Vulkan shader ${shader_name}"
+            VERBATIM
+        )
+        list(APPEND APP_SPIRV_OUTPUTS "${shader_output}")
+    endforeach()
+
+    add_custom_target(compile_vulkan_shaders DEPENDS ${APP_SPIRV_OUTPUTS})
+    add_dependencies(${PROJECT_NAME} compile_vulkan_shaders)
+
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${APP_SPIRV_OUTPUT_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${APP_SPIRV_OUTPUTS} "${APP_SPIRV_OUTPUT_DIR}"
+        COMMENT "Copying Vulkan shader binaries to build directory"
+    )
+endif()
+
 # ## Compiler Options
 if(MSVC)
     # add precompiled headers for MSVC (pch.hpp & pch.cpp)
@@ -165,6 +202,10 @@ endif()
 
 if(SCPP_ENABLE_NDI)
     target_compile_definitions(${PROJECT_NAME} PUBLIC SCPP_ENABLE_NDI=1)
+endif()
+
+if(SCPP_USE_VULKAN_UI)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC SCPP_USE_VULKAN_UI=1)
 endif()
 
 if(APPLE)

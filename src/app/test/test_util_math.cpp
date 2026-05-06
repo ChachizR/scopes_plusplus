@@ -5,6 +5,7 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <cmath>
 #include <limits>
 
 namespace scpp::tests {
@@ -68,13 +69,13 @@ TEMPLATE_TEST_CASE("constexpr pow2i 2^n", "[math_utils]", float, double, long do
 TEMPLATE_TEST_CASE("constexpr exp e^n", "[math_utils]", float, double, long double) {
     constexpr auto precisionPercent = 1e-15;
 
-    CHECK(exp_constexpr<TestType>(0) == exp(TestType(0)));
-    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(1)), WithinRel(static_cast<double>(exp(TestType(1))), precisionPercent));
-    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(2)), WithinRel(static_cast<double>(exp(TestType(2))), precisionPercent));
-    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(4)), WithinRel(static_cast<double>(exp(TestType(4))), precisionPercent));
-    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(-1)), WithinRel(static_cast<double>(exp(TestType(-1))), precisionPercent));
-    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(-2)), WithinRel(static_cast<double>(exp(TestType(-2))), precisionPercent));
-    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(-4)), WithinRel(static_cast<double>(exp(TestType(-4))), precisionPercent));
+    CHECK(exp_constexpr<TestType>(0) == std::exp(TestType(0)));
+    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(1)), WithinRel(static_cast<double>(std::exp(TestType(1))), precisionPercent));
+    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(2)), WithinRel(static_cast<double>(std::exp(TestType(2))), precisionPercent));
+    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(4)), WithinRel(static_cast<double>(std::exp(TestType(4))), precisionPercent));
+    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(-1)), WithinRel(static_cast<double>(std::exp(TestType(-1))), precisionPercent));
+    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(-2)), WithinRel(static_cast<double>(std::exp(TestType(-2))), precisionPercent));
+    CHECK_THAT(static_cast<double>(exp_constexpr<TestType>(-4)), WithinRel(static_cast<double>(std::exp(TestType(-4))), precisionPercent));
 }
 
 TEMPLATE_TEST_CASE("mapRange basic mapping and edge behaviour",
@@ -141,7 +142,7 @@ TEMPLATE_TEST_CASE("mapRangeClampOut clamps output to given range",
         CHECK_THAT(static_cast<double>(mapped), WithinRel(0.75, relTol)); // 1.0 clamped to 0.75
     }
 
-    // Exactly at clamp boundaries – should pass through
+    // Exactly at clamp boundaries - should pass through
     {
         T valueLow  = T(0);
         T valueHigh = T(10);

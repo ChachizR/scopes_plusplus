@@ -9,6 +9,7 @@
 
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_vulkan.h"
 #include "backends/imgui_impl_opengl3.h"
 
 #define GLFW_INCLUDE_NONE
@@ -26,6 +27,10 @@
 
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
+
+#ifdef None
+#undef None
+#endif
 
 #include <glm/glm.hpp> 
 
@@ -56,6 +61,7 @@ using namespace std::literals::string_view_literals;
 #include <expected>
 #include <optional>
 #include <cstdint>
+#include <limits>
 
 #include <chrono>
 using namespace std::literals::chrono_literals;
@@ -68,3 +74,4 @@ using Clock = std::chrono::steady_clock;
 #include <filesystem>
 #include <fstream>
 #include <cmath>
+#include <cstring>
